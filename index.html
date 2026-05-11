@@ -1350,11 +1350,25 @@ function doGet(e){
       </div>
       <div id="tope-msg"></div>
       <div id="carga-msg"></div>
-      <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-        <button class="btn btn-primary" id="btn-guardar" onclick="guardarEntrega()">Guardar entrega</button>
-        <button class="btn" onclick="abrirModalFoto()" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;">
-          📎 Enviar documentación
-        </button>
+      <!-- FLUJO UNIFICADO: foto obligatoria → guardar -->
+      <div id="flujo-foto-guardar" style="margin-top:16px;">
+        <!-- PASO 1: Seleccionar foto -->
+        <div id="paso-foto" style="border:2px dashed #bfdbfe;border-radius:8px;padding:14px 16px;background:#eff6ff;">
+          <div style="font-size:13px;font-weight:600;color:#1d4ed8;margin-bottom:8px;">📎 Paso 1 — Adjuntar comprobante (obligatorio)</div>
+          <div style="font-size:12px;color:#4b5563;margin-bottom:10px;">Foto de la nota de entrega firmada o de la orden médica.</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <input type="file" id="foto-file-inline" accept="image/*,application/pdf" style="font-size:12px;max-width:260px;" onchange="onFotoSeleccionada(this)">
+            <span id="foto-inline-status" style="font-size:12px;"></span>
+          </div>
+        </div>
+        <!-- PASO 2: botón guardar (se habilita cuando hay foto lista) -->
+        <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-primary" id="btn-guardar" onclick="guardarEntregaConFoto()" disabled
+            style="opacity:0.5;cursor:not-allowed;">
+            ✓ Guardar entrega
+          </button>
+          <span id="carga-inline-hint" style="font-size:12px;color:#6b7280;">Adjuntá el comprobante para habilitar el guardado.</span>
+        </div>
       </div>
     </div>
 
@@ -1825,7 +1839,7 @@ async function doMainLogin() {
 checkFirstTime();
 // Pre-cargar URL de Apps Script
 if (!localStorage.getItem('medi_sheets_url')) {
-  localStorage.setItem('medi_sheets_url', 'https://script.google.com/macros/s/AKfycbwvCUYGYxdjqnBGk1qmpJG73Sf8FBVd7g0Mlgftd4JTCab8DJTupmslnPYCz0bi8Dau/exec');
+  localStorage.setItem('medi_sheets_url', 'https://script.google.com/macros/s/AKfycbyYNU9b4eB1th811fFRge0i2a3_2ifcZb_MlgqFXSs5C2NGUFfo54uqaEzgwbCd0FmU/exec');
 }
   }
 }
@@ -2833,7 +2847,7 @@ function clearLocalPass() {
   status.style.color = 'var(--or)';
 }
 // URL de Apps Script embebida
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwvCUYGYxdjqnBGk1qmpJG73Sf8FBVd7g0Mlgftd4JTCab8DJTupmslnPYCz0bi8Dau/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyYNU9b4eB1th811fFRge0i2a3_2ifcZb_MlgqFXSs5C2NGUFfo54uqaEzgwbCd0FmU/exec';
 function getScriptUrl() {
   return localStorage.getItem('medi_sheets_url') || APPS_SCRIPT_URL;
 }
@@ -3042,7 +3056,7 @@ document.getElementById('main-pass').focus();
 checkFirstTime();
 // Pre-cargar URL de Apps Script
 if (!localStorage.getItem('medi_sheets_url')) {
-  localStorage.setItem('medi_sheets_url', 'https://script.google.com/macros/s/AKfycbwvCUYGYxdjqnBGk1qmpJG73Sf8FBVd7g0Mlgftd4JTCab8DJTupmslnPYCz0bi8Dau/exec');
+  localStorage.setItem('medi_sheets_url', 'https://script.google.com/macros/s/AKfycbyYNU9b4eB1th811fFRge0i2a3_2ifcZb_MlgqFXSs5C2NGUFfo54uqaEzgwbCd0FmU/exec');
 }
 
 
@@ -3050,7 +3064,7 @@ if (!localStorage.getItem('medi_sheets_url')) {
 // MÓDULO SECCIONALES — Control de Insumos
 // ════════════════════════════════════════════════════
 
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw54A0lIykRhxpA-w6aZSkOcD8z466VP9d_L8cfo66jD2bS4vBq0BLLzBcIhaSix0Q-eg/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyYNU9b4eB1th811fFRge0i2a3_2ifcZb_MlgqFXSs5C2NGUFfo54uqaEzgwbCd0FmU/exec';
 
 const TOPES = {
   DB1: { tiras: 750, lancetas: 730, agujas: 800, glucometro: 1 },
@@ -3224,25 +3238,48 @@ async function cargarDatos() {
   }
 }
 
-async function guardarEntrega() {
-  const nombre = document.getElementById('c-nombre').value.trim();
-  const dni = document.getElementById('c-dni').value.trim();
+// ── FLUJO UNIFICADO: foto seleccionada → habilitar botón ─────────────
+function onFotoSeleccionada(input) {
+  const btn    = document.getElementById('btn-guardar');
+  const hint   = document.getElementById('carga-inline-hint');
+  const status = document.getElementById('foto-inline-status');
+  if (input.files && input.files.length > 0) {
+    const f = input.files[0];
+    status.innerHTML = '<span style="color:#16a34a">✔ ' + f.name + '</span>';
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.style.cursor  = 'pointer';
+    hint.textContent  = 'Listo. Completá los campos y guardá.';
+  } else {
+    status.innerHTML = '';
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+    btn.style.cursor  = 'not-allowed';
+    hint.textContent  = 'Adjuntá el comprobante para habilitar el guardado.';
+  }
+}
+
+// ── GUARDAR CON FOTO (flujo unificado) ───────────────────────────────
+async function guardarEntregaConFoto() {
+  const nombre      = document.getElementById('c-nombre').value.trim();
+  const dni         = document.getElementById('c-dni').value.trim();
   const diagnostico = document.getElementById('c-diagnostico').value;
-  const insumo = document.getElementById('c-insumo').value;
-  const cajas = document.getElementById('c-cajas').value;
-  const fecha = document.getElementById('c-fecha').value;
-  const msg = document.getElementById('carga-msg');
-  const fotoFile = document.getElementById('foto-file');
-  const tieneDoc = window._fotoEnviada || (fotoFile && fotoFile.files && fotoFile.files.length > 0);
+  const insumo      = document.getElementById('c-insumo').value;
+  const cajas       = document.getElementById('c-cajas').value;
+  const fecha       = document.getElementById('c-fecha').value;
+  const msg         = document.getElementById('carga-msg');
+  const fotoInput   = document.getElementById('foto-file-inline');
+  const fotoFile    = fotoInput && fotoInput.files && fotoInput.files[0];
 
   if (!nombre || !dni || !diagnostico || !insumo || !cajas || !fecha) {
     msg.innerHTML = '<div class="msg msg-err">⚠ Completá todos los campos antes de guardar.</div>';
     return;
   }
-  // Documentación opcional por ahora — se puede enviar por separado
-  // if (!tieneDoc) { ... }
+  if (!fotoFile) {
+    msg.innerHTML = '<div class="msg msg-err">⚠ Adjuntá el comprobante antes de guardar.</div>';
+    return;
+  }
 
-  // Verificar tope antes de enviar
   const tipoInsumo = getTipoInsumo(insumo);
   const tope = getTopeAfiliado(dni, diagnostico, tipoInsumo);
   if (tope !== null && tope > 0) {
@@ -3255,39 +3292,82 @@ async function guardarEntrega() {
 
   const btn = document.getElementById('btn-guardar');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Guardando...';
-  msg.innerHTML = '<div class="msg msg-loading"><span class="spinner"></span> Enviando a Google Sheets...</div>';
+  btn.innerHTML = '<span class="spinner"></span> Subiendo foto...';
+  msg.innerHTML = '<div class="msg msg-loading"><span class="spinner"></span> Subiendo comprobante al Drive...</div>';
+
+  let comprobanteUrl = '';
 
   try {
-    const res = await fetch(SCRIPT_URL, {
+    // PASO 1 — subir foto al Drive
+    const base64 = await new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload  = e => res(e.target.result);
+      reader.onerror = rej;
+      reader.readAsDataURL(fotoFile);
+    });
+
+    const seccional  = currentUser?.seccional || 'SECCIONAL';
+    const fechaStr   = fecha.replace(/-/g, '');
+    const nombreFoto = seccional + '_' + fechaStr + '_DNI' + dni + '_' + fotoFile.name;
+
+    const resFoto = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        action:   'subirFoto',
+        archivo:  base64,
+        tipo:     fotoFile.type,
+        nombre:   nombreFoto,
+        seccional, fecha, afiliado: nombre, insumo
+      })
+    });
+    const dataFoto = await resFoto.json();
+    if (!dataFoto.ok) throw new Error('Error al subir foto: ' + (dataFoto.error || dataFoto.msg || 'desconocido'));
+    comprobanteUrl = dataFoto.url || '';
+
+    // PASO 2 — guardar entrega con la URL del comprobante
+    btn.innerHTML = '<span class="spinner"></span> Guardando entrega...';
+    msg.innerHTML = '<div class="msg msg-loading"><span class="spinner"></span> Guardando en Google Sheets...</div>';
+
+    const resEnt = await fetch(SCRIPT_URL, {
       method: 'POST',
       body: JSON.stringify({
         action: 'guardarEntrega',
-        fecha, seccional: currentUser.seccional,
-        nombre, dni, diagnostico, insumo,
+        fecha, seccional, nombre, dni, diagnostico, insumo,
         cajas: parseInt(cajas),
-        comprobanteUrl: comprobante||'',
+        comprobanteUrl,
         nota: '',
         timestamp: new Date().toISOString()
       })
     });
-    const result = await res.json();
-    if (!result.ok) throw new Error(result.msg||'Error del servidor');
+    const dataEnt = await resEnt.json();
+    if (!dataEnt.ok) throw new Error(dataEnt.msg || dataEnt.error || 'Error al guardar entrega');
+
+    // Éxito — limpiar formulario
     document.getElementById('c-nombre').value = '';
     document.getElementById('c-dni').value = '';
     document.getElementById('c-diagnostico').value = '';
     document.getElementById('c-insumo').value = '';
     document.getElementById('c-cajas').value = '';
     document.getElementById('tope-msg').innerHTML = '';
-    msg.innerHTML = '<div class="msg msg-ok">✓ Entrega guardada correctamente en Google Sheets.</div>';
-    setTimeout(() => { msg.innerHTML = ''; }, 5000);
+    fotoInput.value = '';
+    document.getElementById('foto-inline-status').innerHTML = '';
+    onFotoSeleccionada({ files: [] }); // deshabilitar botón de nuevo
+    msg.innerHTML = '<div class="msg msg-ok">✓ Comprobante subido y entrega guardada correctamente.</div>';
+    setTimeout(() => { msg.innerHTML = ''; }, 6000);
     setTimeout(() => cargarDatos(), 2000);
-  } catch(e) {
-    msg.innerHTML = '<div class="msg msg-err">✗ Error al guardar. Verificá la conexión e intentá de nuevo.</div>';
-  } finally {
+
+  } catch(err) {
+    msg.innerHTML = '<div class="msg msg-err">✗ Error: ' + (err.message || err) + '</div>';
     btn.disabled = false;
-    btn.innerHTML = 'Guardar entrega';
+    btn.style.opacity = '1';
+    btn.style.cursor  = 'pointer';
+    btn.innerHTML = '✓ Guardar entrega';
   }
+}
+
+// ── guardarEntrega legacy — redirige al flujo unificado ──────────────
+async function guardarEntrega() {
+  return guardarEntregaConFoto();
 }
 
 function renderSeccional() {
