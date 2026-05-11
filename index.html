@@ -3184,7 +3184,7 @@ async function cargarDatos() {
   try {
     const url = (currentUser.seccional === '__admin__')
       ? SCRIPT_URL + '?action=getData&pass=' + encodeURIComponent(adminPass) + '&t=' + Date.now()
-      : SCRIPT_URL + '?t=' + Date.now();
+      : SCRIPT_URL + '?action=getEntregas&seccional=' + encodeURIComponent(currentUser.seccional) + '&t=' + Date.now();
     const res = await fetch(url);
     const raw = await res.json();
 
