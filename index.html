@@ -1,0 +1,2163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Salón Glass – Reservas</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --g1:#2D5A3D;--g2:#3B7A52;--g3:#4E9467;--g4:#A8D5B5;--g5:#D4EDD9;--g6:#EEF7F0;
+  --cream:#F7F9F5;--white:#FFFFFF;--text:#1C3326;--muted:#5A7A65;--border:#C5DEC9;
+  --gold:#B5974A;--gold-l:#E8D9A8;
+  --danger:#7A3535;--danger-bg:#FDEAEA;
+  --warn:#7A5C1A;--warn-bg:#FDF6E3;
+  --blue:#2A5A8A;--blue-bg:#EEF4FF;--blue-b:#9DC0E8;
+  --sh:0 2px 16px rgba(45,90,61,.10);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);min-height:100vh;}
+
+#loadingScreen{position:fixed;inset:0;background:var(--cream);display:flex;align-items:center;justify-content:center;z-index:9999;flex-direction:column;gap:12px;}
+#loadingScreen p{color:var(--muted);font-size:.85rem;}
+.spinner{width:36px;height:36px;border:3px solid var(--g4);border-top-color:var(--g1);border-radius:50%;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+header{background:var(--g1);padding:14px 18px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200;border-bottom:2px solid var(--g3);box-shadow:0 2px 12px rgba(45,90,61,.25);}
+.logo{font-family:'Cormorant Garamond',serif;color:var(--g4);font-size:1.22rem;letter-spacing:.04em;line-height:1.1;}
+.logo small{display:block;font-size:.62rem;letter-spacing:.12em;color:var(--g3);font-family:'DM Sans',sans-serif;font-weight:500;text-transform:uppercase;}
+.nav{display:flex;gap:6px;}
+.nb{background:transparent;border:1.5px solid var(--g3);color:var(--g4);padding:6px 12px;border-radius:5px;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:.76rem;font-weight:500;letter-spacing:.04em;transition:all .2s;}
+.nb:hover,.nb.active{background:var(--g3);color:var(--white);border-color:var(--g3);}
+.page{display:none;}.page.active{display:block;}
+
+.hero{background:linear-gradient(160deg,var(--g1) 0%,var(--g2) 55%,#3D6B4A 100%);padding:40px 20px 28px;text-align:center;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(168,213,181,.15) 0%,transparent 65%);}
+.hero h1{font-family:'Cormorant Garamond',serif;color:var(--g5);font-size:1.9rem;margin-bottom:5px;position:relative;font-weight:600;}
+.hero p{color:var(--g4);font-size:.87rem;position:relative;}
+
+.ibox{margin:12px 16px;padding:11px 14px;border-radius:8px;font-size:.82rem;line-height:1.55;}
+.ibox.warn{background:var(--warn-bg);border-left:4px solid var(--gold);color:var(--warn);}
+.ibox.green{background:var(--g6);border-left:4px solid var(--g3);color:var(--g1);}
+.ibox strong{display:block;margin-bottom:2px;font-size:.86rem;font-weight:600;}
+
+.stitle{font-family:'Cormorant Garamond',serif;font-size:1.08rem;color:var(--g1);padding:13px 16px 8px;border-bottom:1px solid var(--border);margin-bottom:10px;font-weight:600;}
+
+.cwrap{padding:0 16px 12px;}
+.chead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.chead h3{font-family:'Cormorant Garamond',serif;font-size:.96rem;font-weight:600;}
+.cnav{background:var(--g1);color:var(--g4);border:none;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:.95rem;transition:all .2s;}
+.cnav:hover{background:var(--g3);}
+.cgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
+.cdn{text-align:center;font-size:.66rem;font-weight:600;color:var(--muted);padding:3px 0;}
+.cd{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:6px;font-size:.79rem;cursor:pointer;border:1.5px solid transparent;transition:all .15s;background:var(--white);position:relative;}
+.cd.empty{background:transparent;cursor:default;}
+.cd.past{background:#eee;color:#bbb;cursor:not-allowed;}
+.cd.blocked{background:#f0f0f0;color:#bbb;cursor:not-allowed;}
+.cd.full{background:var(--danger-bg);color:var(--danger);cursor:not-allowed;}
+.cd.full::after{content:'✕';font-size:.55rem;display:block;}
+.cd.partial{background:var(--warn-bg);color:var(--warn);border-color:var(--gold-l);}
+.cd.partial::after{content:'½';font-size:.6rem;display:block;color:var(--gold);}
+.cd.available{background:var(--g6);color:var(--g2);}
+.cd.available::after{content:'✓';font-size:.55rem;display:block;}
+.cd.feriado{border:2px solid var(--gold)!important;}
+.cd.feriado-dot::before{content:'';position:absolute;top:3px;right:3px;width:5px;height:5px;background:var(--gold);border-radius:50%;}
+.cd.selected{background:var(--g1);color:var(--g4);border-color:var(--g3);}
+.cd.selected::after{content:'';}
+.cd:not(.empty):not(.past):not(.full):not(.blocked):hover{border-color:var(--g3);transform:scale(1.06);}
+.cd.today{border-color:var(--g3)!important;font-weight:700;}
+.cal-blocked-msg{text-align:center;font-size:.78rem;color:var(--muted);padding:8px 16px 4px;font-style:italic;}
+
+.legend{display:flex;flex-wrap:wrap;gap:7px;padding:0 16px 12px;}
+.leg{display:flex;align-items:center;gap:4px;font-size:.7rem;color:var(--muted);}
+.ldot{width:11px;height:11px;border-radius:3px;}
+
+.shwrap{padding:0 16px 12px;}
+.shcard{background:var(--white);border:1.5px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:space-between;}
+.shcard:hover:not(.disabled){border-color:var(--g3);box-shadow:var(--sh);}
+.shcard.selected{border-color:var(--g2);background:var(--g6);}
+.shcard.disabled{opacity:.4;cursor:not-allowed;background:#f5f5f5;}
+.sh-n{font-weight:600;font-size:.87rem;}
+.sh-t{font-size:.74rem;color:var(--muted);}
+.sh-p{font-size:.75rem;color:var(--g2);font-weight:500;margin-top:2px;}
+.shbadge{font-size:.68rem;padding:3px 9px;border-radius:20px;font-weight:600;}
+.bok{background:var(--g6);color:var(--g2);}
+.bno{background:var(--danger-bg);color:var(--danger);}
+
+.pbox{background:var(--white);border:1.5px solid var(--g4);border-radius:10px;padding:14px 16px;margin:0 16px 12px;}
+.pbox h4{font-size:.74rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em;}
+.pr{display:flex;justify-content:space-between;font-size:.85rem;padding:3px 0;}
+.pr.total{font-weight:700;font-size:.95rem;border-top:1px solid var(--border);margin-top:6px;padding-top:8px;color:var(--g1);}
+.pr.sena{font-weight:600;color:var(--g2);font-size:.87rem;background:var(--g6);padding:6px 8px;border-radius:6px;margin-top:4px;}
+.pr-note{font-size:.72rem;color:var(--muted);margin-top:5px;line-height:1.45;}
+
+.fwrap{padding:0 16px 24px;}
+.fg{margin-bottom:11px;}
+.fg label{display:block;font-size:.75rem;font-weight:600;margin-bottom:4px;color:var(--text);}
+.fg input,.fg select,.fg textarea{width:100%;padding:10px 13px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:.85rem;background:var(--white);color:var(--text);transition:border-color .2s;outline:none;}
+.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--g3);}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.fnote{font-size:.71rem;color:var(--muted);margin-top:3px;}
+.fnote.err{color:var(--danger);}
+
+.crow{display:flex;align-items:flex-start;gap:10px;padding:9px 0;cursor:pointer;}
+.crow input[type=checkbox]{width:18px;height:18px;accent-color:var(--g2);cursor:pointer;flex-shrink:0;margin-top:2px;pointer-events:none;}
+.clabel{font-size:.87rem;font-weight:600;line-height:1.3;}
+.clabel small{display:block;font-size:.73rem;font-weight:400;color:var(--muted);margin-top:2px;}
+.abox{background:var(--blue-bg);border:1.5px solid var(--blue-b);border-radius:10px;padding:12px 14px;margin-bottom:11px;display:none;}
+.abox.show{display:block;}
+.abox .fg label{color:var(--blue);}
+.abadge{display:inline-block;background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-b);font-size:.65rem;padding:2px 7px;border-radius:20px;font-weight:700;margin-left:5px;vertical-align:middle;}
+
+.btnp{width:100%;padding:13px;background:var(--g1);color:var(--g5);border:none;border-radius:8px;font-family:'Cormorant Garamond',serif;font-size:1.05rem;cursor:pointer;transition:all .2s;font-weight:600;}
+.btnp:hover{background:var(--g2);}
+
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(100px);background:var(--g1);color:var(--g5);padding:11px 22px;border-radius:10px;font-size:.83rem;border:1px solid var(--g3);transition:transform .3s;z-index:999;text-align:center;max-width:320px;}
+.toast.show{transform:translateX(-50%) translateY(0);}
+
+.mov{display:none;position:fixed;inset:0;background:rgba(28,51,38,.82);z-index:300;align-items:center;justify-content:center;padding:16px;}
+.mov.open{display:flex;}
+.modal{background:var(--cream);border-radius:16px;padding:26px 22px;max-width:360px;width:100%;text-align:center;border:2px solid var(--g3);}
+.modal h2{font-family:'Cormorant Garamond',serif;color:var(--g1);margin-bottom:6px;font-size:1.45rem;}
+.modal p{font-size:.84rem;color:var(--muted);line-height:1.6;margin-bottom:5px;}
+.mcode{background:var(--g1);color:var(--g4);font-size:1.6rem;font-family:'Cormorant Garamond',serif;padding:10px 20px;border-radius:8px;margin:11px 0;letter-spacing:.12em;font-weight:700;}
+.mwarn{background:var(--warn-bg);color:var(--warn);padding:9px 12px;border-radius:8px;font-size:.79rem;font-weight:500;margin-bottom:11px;line-height:1.5;}
+.mprice{background:var(--g6);color:var(--g1);padding:9px 12px;border-radius:8px;font-size:.79rem;margin-bottom:11px;line-height:1.6;}
+.btns{padding:10px 26px;background:var(--g2);color:var(--white);border:none;border-radius:8px;font-family:'DM Sans',sans-serif;font-weight:600;cursor:pointer;font-size:.87rem;}
+
+.alogin{max-width:340px;margin:44px auto;padding:28px 22px;background:var(--white);border-radius:16px;border:1.5px solid var(--border);text-align:center;box-shadow:var(--sh);}
+.alogin h2{font-family:'Cormorant Garamond',serif;margin-bottom:5px;font-size:1.4rem;}
+.alogin p{font-size:.81rem;color:var(--muted);margin-bottom:18px;}
+.apanel{padding:14px;max-width:800px;margin:0 auto;}
+.ahead{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px;}
+.ahead h2{font-family:'Cormorant Garamond',serif;font-size:1.25rem;}
+.btsm{padding:5px 12px;background:var(--g1);color:var(--g4);border:none;border-radius:6px;cursor:pointer;font-size:.75rem;font-weight:500;}
+
+.tabs{display:flex;gap:2px;margin-bottom:13px;border-bottom:2px solid var(--border);overflow-x:auto;}
+.tb{padding:8px 13px;background:none;border:none;font-family:'DM Sans',sans-serif;font-size:.77rem;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s;white-space:nowrap;font-weight:500;}
+.tb.active{color:var(--g1);border-bottom-color:var(--g2);font-weight:700;}
+.tc{display:none;}.tc.active{display:block;}
+
+.srow{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:12px;}
+.sc{background:var(--white);border-radius:10px;padding:11px 10px;text-align:center;border:1.5px solid var(--border);}
+.scn{font-family:'Cormorant Garamond',serif;font-size:1.45rem;color:var(--g1);}
+.scl{font-size:.67rem;color:var(--muted);margin-top:1px;}
+
+.sbar{position:relative;margin-bottom:10px;}
+.sbar input{width:100%;padding:9px 12px 9px 34px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:.85rem;outline:none;background:var(--white);}
+.sbar input:focus{border-color:var(--g3);}
+.slupa{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:.9rem;pointer-events:none;}
+
+.frow2{display:flex;gap:5px;margin-bottom:11px;flex-wrap:wrap;}
+.fb{padding:5px 11px;border-radius:20px;border:1.5px solid var(--border);background:var(--white);font-size:.73rem;cursor:pointer;transition:all .15s;color:var(--text);font-weight:500;}
+.fb.active{background:var(--g1);color:var(--g4);border-color:var(--g1);}
+
+.rc{background:var(--white);border-radius:10px;padding:13px;margin-bottom:8px;border:1.5px solid var(--border);position:relative;overflow:hidden;}
+.rc::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;}
+.rc.ep::before{background:var(--gold);}
+.rc.ec::before{background:var(--g2);}
+.rc.ex::before{background:var(--danger);}
+.rc.ev::before{background:#aaa;}
+.rc.er::before{background:var(--g1);}
+.rctop{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;}
+.rcname{font-weight:600;font-size:.91rem;}
+.rccode{font-size:.69rem;color:var(--muted);font-family:monospace;}
+.rccontract{font-size:.69rem;color:var(--g2);font-family:monospace;font-weight:700;}
+.ebadge{font-size:.65rem;padding:3px 9px;border-radius:20px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;}
+.ep .ebadge{background:var(--warn-bg);color:var(--warn);}
+.ec .ebadge{background:var(--g6);color:var(--g2);}
+.ex .ebadge{background:var(--danger-bg);color:var(--danger);}
+.ev .ebadge{background:#f0f0f0;color:#888;}
+.er .ebadge{background:var(--g1);color:var(--g4);}
+.rcinfo{font-size:.78rem;color:var(--muted);margin-bottom:8px;line-height:1.75;}
+.rcinfo strong{color:var(--text);}
+.rccd{font-size:.73rem;background:var(--warn-bg);color:var(--warn);padding:4px 9px;border-radius:6px;margin-bottom:7px;display:inline-block;}
+
+.conrow{display:flex;gap:8px;align-items:center;margin-bottom:9px;padding:8px 10px;background:var(--g6);border-radius:8px;border:1px solid var(--g4);}
+.conrow label{font-size:.73rem;color:var(--g1);white-space:nowrap;font-weight:700;}
+.coninput{flex:1;padding:7px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:.82rem;font-family:'DM Sans',sans-serif;outline:none;background:var(--white);}
+.coninput:focus{border-color:var(--g3);}
+
+.msec{background:#F8FCF9;border-radius:8px;padding:10px 12px;margin-bottom:8px;border:1px solid var(--border);}
+.msec h5{font-size:.67rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;}
+.mgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.mg label{font-size:.7rem;color:var(--muted);display:block;margin-bottom:3px;font-weight:500;}
+.miw{position:relative;}
+.miw span{position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:.79rem;pointer-events:none;}
+.mi{width:100%;padding:6px 7px 6px 18px;border:1.5px solid var(--border);border-radius:6px;font-size:.8rem;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--text);outline:none;}
+.mi:focus{border-color:var(--g3);}
+.mi.done{background:var(--g6);border-color:var(--g3);font-weight:600;}
+.mi-ref{font-size:.68rem;color:var(--muted);margin-top:2px;}
+.mi-ref b{color:var(--g2);}
+.stag{font-size:.7rem;padding:3px 8px;border-radius:12px;display:inline-block;margin-top:3px;font-weight:600;}
+.stag-p{background:var(--warn-bg);color:var(--warn);}
+.stag-ok{background:var(--g6);color:var(--g2);}
+
+.seg-row{display:flex;align-items:center;gap:8px;margin-top:8px;padding:7px 10px;background:var(--warn-bg);border-radius:7px;border:1px solid var(--gold-l);}
+.seg-row.devuelto{background:var(--g6);border-color:var(--g4);}
+.seg-row label{font-size:.78rem;font-weight:600;color:var(--warn);cursor:pointer;display:flex;align-items:center;gap:7px;flex:1;}
+.seg-row.devuelto label{color:var(--g2);}
+.seg-row input[type=checkbox]{width:17px;height:17px;accent-color:var(--g2);cursor:pointer;flex-shrink:0;}
+
+.maxi-row{background:var(--g6);border-radius:7px;padding:8px 10px;margin-bottom:8px;border:1px solid var(--g4);}
+.maxi-row h6{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700;margin-bottom:5px;}
+.maxi-inner{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;}
+.maxi-val{font-size:.88rem;font-weight:700;color:var(--g1);}
+.maxi-status{font-size:.75rem;}
+
+.rcacts{display:flex;gap:6px;flex-wrap:wrap;}
+.ab{padding:5px 12px;border-radius:6px;border:none;font-size:.73rem;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:600;transition:opacity .2s;}
+.ab:hover{opacity:.8;}
+.ab-r{background:var(--g1);color:var(--g4);}
+.ab-x{background:var(--danger);color:var(--white);}
+.ab-d{background:#ddd;color:#555;}
+.ab-g{background:var(--g2);color:var(--white);}
+
+.stat-blk{background:var(--white);border-radius:12px;padding:16px;margin-bottom:14px;border:1.5px solid var(--border);}
+.stat-blk h3{font-family:'Cormorant Garamond',serif;font-size:1.05rem;color:var(--g1);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border);font-weight:700;}
+.s-hero{border-radius:12px;padding:18px 16px;margin-bottom:12px;text-align:center;}
+.s-hero.verde{background:linear-gradient(135deg,var(--g1) 0%,var(--g2) 100%);}
+.s-hero.oro{background:linear-gradient(135deg,#7A6020 0%,var(--gold) 100%);}
+.s-hero.rojo{background:linear-gradient(135deg,#5A2020 0%,var(--danger) 100%);}
+.s-hero-lbl{font-size:.72rem;color:rgba(255,255,255,.75);font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px;}
+.s-hero-val{font-family:'Cormorant Garamond',serif;font-size:2.1rem;color:#fff;font-weight:700;line-height:1.1;}
+.s-hero-sub{font-size:.69rem;color:rgba(255,255,255,.6);margin-top:4px;}
+.s2cards{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
+.s2card{background:var(--g6);border-radius:9px;padding:11px 12px;border:1px solid var(--border);}
+.s2card.warn{background:var(--warn-bg);border-color:var(--gold-l);}
+.s2card.alert{background:var(--danger-bg);border-color:#e8c0c0;}
+.s2card.blue{background:var(--blue-bg);border-color:var(--blue-b);}
+.s2lbl{font-size:.67rem;color:var(--muted);font-weight:600;margin-bottom:3px;line-height:1.3;}
+.s2val{font-family:'Cormorant Garamond',serif;font-size:1.2rem;font-weight:700;color:var(--g1);}
+.s2val.warn{color:var(--warn);}
+.s2val.alert{color:var(--danger);}
+.s2val.blue{color:var(--blue);}
+.s2val.green{color:var(--g2);}
+.s2sub{font-size:.63rem;color:var(--muted);margin-top:2px;}
+.sbar-wrap{background:var(--white);border-radius:10px;padding:14px;margin-bottom:10px;border:1.5px solid var(--border);}
+.sbar-wrap h4{font-family:'Cormorant Garamond',serif;font-size:.95rem;color:var(--g1);font-weight:700;margin-bottom:12px;}
+.sbarrow{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+.sbl{font-size:.7rem;color:var(--muted);width:30px;text-align:right;flex-shrink:0;}
+.sbo{flex:1;background:var(--g5);border-radius:5px;height:24px;overflow:hidden;position:relative;}
+.sbfill{height:100%;border-radius:5px;display:flex;align-items:center;padding-left:8px;transition:width .3s;}
+.sbfill.verde{background:linear-gradient(90deg,var(--g2),var(--g3));}
+.sbfill.oro{background:linear-gradient(90deg,#B5974A,#D4AE6A);}
+.sbval{font-size:.68rem;font-weight:700;color:#fff;white-space:nowrap;}
+.sbnote{font-size:.7rem;color:var(--muted);margin-top:6px;font-style:italic;}
+.tipogrid2{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-top:8px;}
+.tipoc2{background:var(--g6);border-radius:8px;padding:10px 11px;border:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.tipoc2-n{font-family:'Cormorant Garamond',serif;font-size:1.3rem;color:var(--g1);font-weight:700;}
+.tipoc2-l{font-size:.72rem;color:var(--muted);margin-top:1px;}
+.s-divider{font-family:'Cormorant Garamond',serif;font-size:.88rem;color:var(--muted);font-weight:600;padding:4px 0 8px;border-bottom:1px solid var(--border);margin-bottom:10px;letter-spacing:.02em;}
+.fcards{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.fc{background:var(--g6);border-radius:9px;padding:12px 11px;border:1px solid var(--border);}
+.fclbl{font-size:.69rem;color:var(--muted);margin-bottom:4px;font-weight:500;line-height:1.3;}
+.fcval{font-family:'Cormorant Garamond',serif;font-size:1.22rem;color:var(--g1);font-weight:700;}
+.fcval.green{color:var(--g2);}
+.fcval.gold{color:var(--gold);}
+.fcval.warn{color:var(--warn);}
+.fcval.blue{color:var(--blue);}
+.fcval.red{color:var(--danger);}
+.fcsub{font-size:.67rem;color:var(--muted);margin-top:2px;line-height:1.3;}
+
+.cbox{background:var(--white);border-radius:10px;padding:15px;margin-bottom:11px;border:1.5px solid var(--border);}
+.cbox h4{font-family:'Cormorant Garamond',serif;font-size:.98rem;margin-bottom:11px;color:var(--g1);font-weight:700;}
+.barrow{display:flex;align-items:center;gap:7px;margin-bottom:6px;}
+.bl{font-size:.69rem;color:var(--muted);width:28px;text-align:right;flex-shrink:0;}
+.bo{flex:1;background:var(--g5);border-radius:4px;height:22px;overflow:hidden;display:flex;}
+.bi{height:100%;border-radius:4px;display:flex;align-items:center;padding:0 5px;min-width:0;transition:width .6s;}
+.bi-p{background:linear-gradient(90deg,var(--g2),var(--g4));}
+.bi-a{background:linear-gradient(90deg,var(--blue),var(--blue-b));}
+.bi-m{background:linear-gradient(90deg,var(--gold),var(--gold-l));}
+.bv{font-size:.67rem;font-weight:600;color:var(--g1);white-space:nowrap;}
+.bv.w{color:var(--white);}
+.cnote{font-size:.68rem;color:var(--muted);margin-top:6px;}
+
+.tipogrid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:10px;}
+.tipoc{background:var(--g6);border-radius:8px;padding:10px;text-align:center;border:1px solid var(--border);}
+.tipoc .tn{font-family:'Cormorant Garamond',serif;font-size:1.2rem;font-weight:700;}
+.tipoc .tl{font-size:.67rem;color:var(--muted);}
+
+.expbtn{display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--g1);color:var(--g5);border:none;border-radius:8px;font-family:'DM Sans',sans-serif;font-weight:600;cursor:pointer;font-size:.83rem;transition:background .2s;margin-bottom:13px;}
+.expbtn:hover{background:var(--g2);}
+
+.mxhead{background:var(--g1);border-radius:12px;padding:16px;margin-bottom:13px;text-align:center;}
+.mxhead h3{font-family:'Cormorant Garamond',serif;color:var(--g4);font-size:1.25rem;}
+.mxhead p{color:var(--g3);font-size:.78rem;margin-top:3px;}
+.mxcards{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-bottom:13px;}
+.firow{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:.82rem;}
+.firow:last-child{border:none;}
+.fi-name{font-weight:600;}
+.fi-date{font-size:.72rem;color:var(--muted);}
+.fi-val{font-weight:700;color:var(--g1);margin-right:8px;}
+.ab-pay{padding:4px 10px;border-radius:6px;border:none;font-size:.71rem;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:600;}
+.pay-ok{background:var(--g2);color:var(--white);}
+.pay-un{background:#ddd;color:#555;}
+
+.cfgnote{font-size:.76rem;color:var(--muted);background:var(--g6);padding:9px 12px;border-radius:8px;margin-bottom:11px;line-height:1.5;border-left:3px solid var(--g3);}
+.cfgsec{background:var(--white);border-radius:10px;padding:15px;margin-bottom:11px;border:1.5px solid var(--border);}
+.cfgsec h4{font-family:'Cormorant Garamond',serif;font-size:.96rem;margin-bottom:11px;padding-bottom:7px;border-bottom:1px solid var(--border);color:var(--g1);}
+.cfggrid{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+.cg label{font-size:.72rem;color:var(--muted);display:block;margin-bottom:4px;font-weight:500;}
+.ciw{position:relative;}
+.ciw span{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:.81rem;pointer-events:none;}
+.ci{width:100%;padding:9px 10px 9px 21px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--text);outline:none;}
+.ci:focus{border-color:var(--g3);}
+.cgfull{grid-column:1/-1;}
+.btsave{padding:10px 22px;background:var(--g2);color:var(--white);border:none;border-radius:8px;font-family:'DM Sans',sans-serif;font-weight:600;cursor:pointer;font-size:.85rem;}
+
+.feriado-list{margin-top:10px;}
+.feriado-item{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--warn-bg);border-radius:7px;margin-bottom:5px;border:1px solid var(--gold-l);font-size:.82rem;}
+.feriado-item span{color:var(--warn);font-weight:500;}
+.feriado-del{background:var(--danger);color:var(--white);border:none;border-radius:5px;padding:3px 9px;font-size:.72rem;cursor:pointer;}
+.cal-limit-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.cal-limit-row label{font-size:.78rem;color:var(--muted);font-weight:600;white-space:nowrap;}
+
+.empty-s{text-align:center;padding:36px 16px;color:var(--muted);}
+.empty-s .big{font-size:2.4rem;margin-bottom:7px;}
+.mes-nav{background:var(--white);border:1.5px solid var(--border);border-radius:10px;margin-bottom:10px;overflow:hidden;}
+.mes-nav-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;cursor:pointer;user-select:none;transition:background .15s;}
+.mes-nav-header:hover{background:var(--g6);}
+.mes-nav-title{font-size:.88rem;font-weight:700;color:var(--g1);}
+.mes-nav-meta{font-size:.73rem;color:var(--muted);}
+.mes-nav-arrow{font-size:.8rem;color:var(--muted);transition:transform .2s;}
+.mes-nav-arrow.open{transform:rotate(180deg);}
+.mes-nav-body{display:none;border-top:1px solid var(--border);}
+.mes-nav-body.open{display:block;}
+.mes-nav-item{padding:9px 16px;border-bottom:1px solid var(--g6);cursor:pointer;transition:background .12s;display:flex;align-items:center;justify-content:space-between;}
+.mes-nav-item:last-child{border-bottom:none;}
+.mes-nav-item:hover{background:var(--g6);}
+.mes-nav-item .mn-name{font-size:.84rem;font-weight:600;}
+.mes-nav-item .mn-info{font-size:.72rem;color:var(--muted);}
+.mes-nav-item .mn-badge{font-size:.65rem;padding:2px 7px;border-radius:10px;font-weight:700;}
+
+/* HORAS EXTRA Y DOBLE TURNO */
+.extra-sec{background:#F0F8F3;border-radius:8px;padding:10px 12px;margin-bottom:8px;border:1px solid var(--g4);}
+.extra-sec h6{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:8px;}
+.dt-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:7px;margin-bottom:8px;border:1px solid #ddd;}
+
+/* ── MENÚ PRINCIPAL ── */
+.menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:14px;}
+.menu-card{background:var(--white);border:2px solid var(--border);border-radius:14px;padding:20px 12px 15px;text-align:center;cursor:pointer;transition:all .18s;user-select:none;-webkit-tap-highlight-color:transparent;}
+.menu-card:active{transform:scale(.97);background:var(--g6);border-color:var(--g3);}
+.menu-icon{font-size:2rem;margin-bottom:7px;line-height:1;}
+.menu-label{font-family:'Cormorant Garamond',serif;font-size:1.05rem;font-weight:700;color:var(--g1);margin-bottom:4px;}
+.menu-sub{font-size:.7rem;color:var(--muted);line-height:1.4;min-height:2em;}
+
+/* ── BOTÓN VOLVER / CERRAR ── */
+.back-btn{background:var(--g6);border:1.5px solid var(--g4);color:var(--g1);padding:5px 14px;border-radius:20px;cursor:pointer;font-size:.8rem;font-weight:600;font-family:'DM Sans',sans-serif;white-space:nowrap;}
+.cerrar-ficha-btn{display:block;width:100%;padding:9px;background:var(--g6);border:1.5px solid var(--border);border-radius:8px;color:var(--muted);font-size:.8rem;font-weight:600;cursor:pointer;text-align:center;margin-bottom:10px;font-family:'DM Sans',sans-serif;}
+.cerrar-ficha-btn:active{background:var(--danger-bg);color:var(--danger);}
+
+/* ── TARJETAS DE MES ── */
+.mes-card{display:flex;align-items:center;gap:12px;border-left:5px solid var(--g3);border-top:1.5px solid var(--border);border-right:1.5px solid var(--border);border-bottom:1.5px solid var(--border);border-radius:10px;padding:13px 15px;margin-bottom:9px;cursor:pointer;transition:all .15s;}
+.mes-card:active{opacity:.85;}
+.mes-card-left{text-align:center;min-width:36px;}
+.mes-card-num{font-family:'Cormorant Garamond',serif;font-size:1.65rem;font-weight:700;color:var(--g1);line-height:1;}
+.mes-card-unit{font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+.mes-card-center{flex:1;min-width:0;}
+.mes-card-title{font-size:.93rem;font-weight:700;color:var(--g1);margin-bottom:5px;}
+.mes-card-chips{display:flex;flex-wrap:wrap;gap:4px;}
+.mes-chip{font-size:.63rem;padding:2px 8px;border-radius:20px;font-weight:700;}
+.mes-chip.pend{background:var(--warn-bg);color:var(--warn);}
+.mes-chip.conf{background:var(--g6);color:var(--g2);}
+.mes-chip.real{background:#e8eae8;color:#555;}
+.mes-chip.venc{background:#f0f0f0;color:#888;}
+.mes-card-arrow{font-size:1.3rem;color:var(--muted);}
+
+/* ── ITEM FIESTA ── */
+.fiesta-item{display:flex;align-items:center;gap:10px;background:var(--white);border:1.5px solid var(--border);border-radius:10px;padding:13px 14px;margin-bottom:8px;cursor:pointer;transition:all .15s;}
+.fiesta-item.activa,.fiesta-item:active{border-color:var(--g3);background:var(--g6);}
+.fi-nombre{font-size:.92rem;font-weight:700;color:var(--text);}
+.fi-detalle{font-size:.75rem;color:var(--muted);margin-top:3px;}
+.fi-estado{font-size:.63rem;padding:3px 10px;border-radius:20px;font-weight:700;text-transform:uppercase;white-space:nowrap;flex-shrink:0;}
+
+/* ── ORDEN ── */
+.ord-btn{padding:4px 10px;border-radius:20px;border:1.5px solid var(--border);background:var(--white);font-size:.71rem;cursor:pointer;color:var(--text);font-weight:500;font-family:'DM Sans',sans-serif;}
+.ord-btn.active{background:var(--g1);color:var(--g4);border-color:var(--g1);}
+
+/* ── GASTOS DE SECCIONAL ── */
+.gasto-resumen{background:var(--g1);border-radius:13px;padding:18px 18px 14px;margin-bottom:14px;color:var(--g4);}
+.gasto-res-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;}
+.gasto-res-lbl{font-size:.8rem;color:var(--g4);font-weight:500;}
+.gasto-res-val{font-family:'Cormorant Garamond',serif;font-size:1.2rem;font-weight:700;color:var(--g5);}
+.gasto-res-divider{border-top:1px solid rgba(255,255,255,.2);margin:8px 0;}
+.gasto-form-wrap{background:var(--white);border:1.5px solid var(--border);border-radius:12px;padding:15px;margin-bottom:14px;}
+.gasto-form-title{font-family:'Cormorant Garamond',serif;font-size:1rem;font-weight:700;color:var(--g1);margin-bottom:12px;}
+.gasto-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+.gasto-lista-title{font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+.gasto-item{background:var(--white);border:1.5px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px;}
+.gasto-item-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+.gasto-item-detalle{font-size:.9rem;font-weight:700;color:var(--text);margin-bottom:3px;}
+.gasto-item-meta{font-size:.75rem;color:var(--muted);}
+.gasto-item-comentario{font-size:.74rem;color:var(--muted);margin-top:4px;font-style:italic;}
+.gasto-item-monto{font-family:'Cormorant Garamond',serif;font-size:1.15rem;font-weight:700;color:var(--g1);white-space:nowrap;}
+
+/* ── DESGLOSE POR RESERVA ── */
+.desglose-wrap{background:var(--white);border:1.5px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden;}
+.desglose-title{padding:12px 15px;font-size:.82rem;font-weight:700;color:var(--g1);cursor:pointer;display:flex;justify-content:space-between;align-items:center;transition:background .15s;}
+.desglose-title:active{background:var(--g6);}
+.desglose-title span{font-size:1rem;color:var(--muted);transition:transform .2s;}
+.desglose-sub{font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:10px 14px 6px;border-top:1px solid var(--border);background:var(--cream);}
+.desglose-row{padding:9px 14px;border-bottom:1px solid var(--g6);}
+.desglose-nombre{font-size:.85rem;font-weight:700;color:var(--text);}
+.desglose-fecha{font-size:.72rem;color:var(--muted);margin-bottom:5px;}
+.desglose-calculo{display:flex;align-items:center;flex-wrap:wrap;gap:4px;font-size:.78rem;}
+.dc-item{color:var(--text);font-weight:500;}
+.dc-item.warn{color:var(--warn);}
+.dc-sep{color:var(--muted);font-weight:300;padding:0 2px;}
+.dc-neto{font-weight:800;color:var(--g1);font-size:.88rem;}
+.desglose-total{padding:10px 14px;background:var(--g6);font-size:.82rem;color:var(--g1);border-top:1px solid var(--border);}
+</style>
+</head>
+<body>
+
+<div id="loadingScreen">
+  <div class="spinner"></div>
+  <p id="loadingMsg">Conectando con Firebase...</p>
+</div>
+
+<header>
+  <div class="logo">Salón Glass<small>Llavallol · Rondeau 151</small></div>
+  <div class="nav">
+    <button class="nb active" id="btnC" onclick="showPage('client')">Reservar</button>
+    <button class="nb" id="btnA" onclick="showPage('admin')" style="display:none">Admin</button>
+    <button class="nb" id="btnAdminHidden" onclick="showAdminLogin()" style="font-size:.65rem;padding:5px 9px;opacity:.3" title="Acceso administrativo">⚙</button>
+  </div>
+</header>
+
+<div id="page-client" class="page active">
+  <div class="hero">
+    <h1>Reservá tu fecha 🎉</h1>
+    <p>Salón Glass · Cumpleaños · XV Años · Casamientos</p>
+  </div>
+  <div class="ibox warn">
+    <strong>⏳ Pre-reserva con validez de 48 horas</strong>
+    La fecha queda pre-reservada por 48 horas. Para confirmarla debés <strong>acercarte al salón a firmar el contrato</strong> y abonar la seña. Sin esa visita la fecha se libera automáticamente.
+  </div>
+  <div class="ibox green">
+    <strong>📍 ¿Dónde firmar el contrato?</strong>
+    Únicamente en las oficinas del Salón — <strong>Rondeau 151, Llavallol</strong> — <strong>lunes a viernes de 10 a 16hs</strong>.
+  </div>
+
+  <div class="stitle">📅 Elegí una fecha</div>
+  <div class="cwrap">
+    <div class="chead">
+      <button class="cnav" onclick="chMes(-1)">‹</button>
+      <h3 id="calTitle"></h3>
+      <button class="cnav" onclick="chMes(1)">›</button>
+    </div>
+    <div class="cgrid" id="calGrid"></div>
+    <p class="cal-blocked-msg" id="calBlockedMsg" style="display:none"></p>
+  </div>
+  <div class="legend">
+    <div class="leg"><div class="ldot" style="background:var(--g6);border:1px solid var(--g3)"></div>Disponible</div>
+    <div class="leg"><div class="ldot" style="background:var(--warn-bg);border:1px solid var(--gold)"></div>Parcial</div>
+    <div class="leg"><div class="ldot" style="background:var(--danger-bg);border:1px solid var(--danger)"></div>Completo</div>
+    <div class="leg"><div class="ldot" style="background:#eee"></div>No disp.</div>
+    <div class="leg"><div class="ldot" style="background:var(--warn-bg);border:2px solid var(--gold)"></div>Feriado</div>
+  </div>
+
+  <div style="padding:0 16px 12px">
+    <button onclick="openCancelModal()" style="width:100%;padding:11px;background:transparent;color:var(--danger);border:1.5px solid var(--danger);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:.83rem;font-weight:600;cursor:pointer;opacity:.75">
+      ❌ Cancelar una pre-reserva existente
+    </button>
+  </div>
+
+  <div id="secTurno" style="display:none">
+    <div class="stitle">🕐 Elegí el turno</div>
+    <div class="shwrap" id="shwrap"></div>
+  </div>
+  <div id="secPrecio" style="display:none">
+    <div class="pbox"><h4>💰 Detalle de precios</h4><div id="precioRows"></div></div>
+  </div>
+  <div id="secForm" style="display:none">
+    <div class="stitle">📝 Tus datos</div>
+    <div class="fwrap">
+      <div class="frow">
+        <div class="fg"><label>Nombre *</label><input type="text" id="fN" placeholder="Tu nombre"></div>
+        <div class="fg"><label>Apellido *</label><input type="text" id="fAp" placeholder="Tu apellido"></div>
+      </div>
+      <div class="fg"><label>Teléfono / WhatsApp *</label><input type="tel" id="fTel" placeholder="Ej: 11 1234-5678"></div>
+      <div class="fg">
+        <label>Tipo de evento *</label>
+        <select id="fTipo"><option value="">Seleccioná...</option><option>Cumpleaños</option><option>XV Años</option><option>Casamiento</option><option>Bautismo / Comunión</option><option>Baby Shower</option><option>Aniversario</option><option>Egresados Primaria</option><option>Otros</option></select>
+      </div>
+      <div class="fg">
+        <label>Cantidad de personas * <span style="color:var(--danger);font-size:.72rem">(máx. 80)</span></label>
+        <input type="number" id="fPer" placeholder="Ej: 60" min="1" max="80" oninput="chkPer()">
+        <p class="fnote err" id="perWarn" style="display:none">⚠️ Capacidad máxima: 80 personas.</p>
+      </div>
+      <label class="crow" onclick="toggleAfil()">
+        <input type="checkbox" id="chkAfil">
+        <div class="clabel">Soy afiliado
+          <small>Marcá si pertenecés a Seccional Llavallol.</small>
+        </div>
+      </label>
+      <div class="abox" id="abox">
+        <div class="fg"><label>Empresa u organización *</label><input type="text" id="fEmp" placeholder="Ej: Sindicato XYZ"></div>
+        <div class="fg"><label>DNI del titular *</label><input type="text" id="fDni" placeholder="Ej: 28.123.456"></div>
+      </div>
+      <div class="fg"><label>Consultas adicionales</label><textarea id="fCons" rows="3" placeholder="Algo que quieras aclarar..."></textarea></div>
+      <button class="btnp" onclick="submitRes()">✨ Solicitar Pre-reserva</button>
+    </div>
+  </div>
+</div>
+
+<div id="page-admin" class="page">
+  <div id="adminLogin">
+    <div class="alogin">
+      <div style="font-size:2.3rem;margin-bottom:9px">🔐</div>
+      <h2>Panel Administrativo</h2>
+      <p>Ingresá la contraseña para acceder</p>
+      <div class="fg"><input type="password" id="aPass" placeholder="Contraseña" onkeypress="if(event.key==='Enter')doLogin()"></div>
+      <button class="btnp" onclick="doLogin()">Ingresar</button>
+    </div>
+  </div>
+  <div id="adminPanel" style="display:none">
+    <div class="apanel">
+      <div class="ahead">
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="back-btn" id="btnVolver" onclick="adminVolver()" style="display:none">‹ Volver</button>
+          <h2 id="adminTitle">Panel</h2>
+        </div>
+        <button class="btsm" onclick="doLogout()">Salir</button>
+      </div>
+      <!-- MENÚ PRINCIPAL -->
+      <div id="adminMenu">
+        <div class="menu-grid">
+          <div class="menu-card" onclick="irAReservas()">
+            <div class="menu-icon">📋</div>
+            <div class="menu-label">Reservas</div>
+            <div class="menu-sub" id="menuSubReservas">–</div>
+          </div>
+          <div class="menu-card" onclick="irASeccion('stats')">
+            <div class="menu-icon">📊</div>
+            <div class="menu-label">Estadísticas</div>
+            <div class="menu-sub">Balance anual</div>
+          </div>
+          <div class="menu-card" onclick="irASeccion('maxi')">
+            <div class="menu-icon">👷</div>
+            <div class="menu-label">Maxi</div>
+            <div class="menu-sub" id="menuSubMaxi">–</div>
+          </div>
+          <div class="menu-card" onclick="irASeccion('config')">
+            <div class="menu-icon">⚙️</div>
+            <div class="menu-label">Config</div>
+            <div class="menu-sub">Precios y fechas</div>
+          </div>
+          <div class="menu-card" onclick="irASeccion('gastos')" style="grid-column:1/-1">
+            <div class="menu-icon">🧾</div>
+            <div class="menu-label">Gastos de Seccional</div>
+            <div class="menu-sub" id="menuSubGastos">Registrar y controlar gastos</div>
+          </div>
+        </div>
+        <div class="srow" id="statRow"></div>
+      </div>
+      <!-- RESERVAS -->
+      <div id="secReservas" style="display:none">
+        <div class="sbar" style="margin-bottom:8px"><span class="slupa">🔍</span><input type="text" id="srch" placeholder="Buscar nombre, código..." oninput="onBuscar()"></div>
+        <div class="frow2" style="margin-bottom:8px">
+          <button class="fb active" onclick="setFil('todos',this)">Todas</button>
+          <button class="fb" onclick="setFil('pendiente',this)">⏳ Pend.</button>
+          <button class="fb" onclick="setFil('confirmada',this)">✅ Conf.</button>
+          <button class="fb" onclick="setFil('realizada',this)">🎉 Real.</button>
+          <button class="fb" onclick="setFil('cancelada',this)">❌ Canc.</button>
+          <button class="fb" onclick="setFil('vencida',this)">⌛ Venc.</button>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+          <span style="font-size:.72rem;color:var(--muted);font-weight:600">Ordenar:</span>
+          <button id="ordFecha" class="ord-btn active" onclick="cambiarOrden('fecha')">📅 Fecha</button>
+          <button id="ordNombre" class="ord-btn" onclick="cambiarOrden('nombre')">🔤 Nombre</button>
+          <button id="ordEstado" class="ord-btn" onclick="cambiarOrden('estado')">🔵 Estado</button>
+        </div>
+        <div id="listaMeses"></div>
+        <div id="listaFiestas" style="display:none"><div id="fichasDelMes"></div></div>
+        <div id="fichaReserva" style="display:none">
+          <button class="cerrar-ficha-btn" onclick="cerrarFicha()">✕ Cerrar ficha</button>
+          <div id="resList"></div>
+        </div>
+      </div>
+      <!-- SECCIONES -->
+      <div id="tab-stats" style="display:none">
+        <button class="expbtn" onclick="exportCSV()">📥 Exportar CSV</button>
+        <div id="statsContent"></div>
+      </div>
+      <div id="tab-maxi" style="display:none">
+        <div class="mxhead"><h3>👷 Pagos a Maxi</h3><p>30% del alquiler por fiesta realizada</p></div>
+        <div id="maxiContent"></div>
+      </div>
+      <div id="tab-gastos" style="display:none">
+        <div id="gastosContent"></div>
+      </div>
+      <div id="tab-config" style="display:none">
+        <div class="cfgsec">
+          <h4>📅 Hasta qué fecha se puede reservar</h4>
+          <div class="cal-limit-row">
+            <label>Habilitado hasta:</label>
+            <select id="limMes" class="ci" style="padding:8px 10px;width:auto">
+              <option value="0">Enero</option><option value="1">Febrero</option><option value="2">Marzo</option>
+              <option value="3">Abril</option><option value="4">Mayo</option><option value="5">Junio</option>
+              <option value="6">Julio</option><option value="7">Agosto</option><option value="8">Septiembre</option>
+              <option value="9">Octubre</option><option value="10">Noviembre</option><option value="11">Diciembre</option>
+            </select>
+            <select id="limAnio" class="ci" style="padding:8px 10px;width:auto"></select>
+            <button class="btsave" onclick="guardarLimite()">Guardar</button>
+          </div>
+        </div>
+        <div class="cfgsec">
+          <h4>🗓️ Feriados nacionales</h4>
+          <div class="frow" style="margin-bottom:10px">
+            <div class="fg" style="margin:0"><label>Fecha del feriado</label><input type="date" id="feriadoDate"></div>
+            <div class="fg" style="margin:0;display:flex;align-items:flex-end"><button class="btsave" style="width:100%" onclick="agregarFeriado()">+ Agregar</button></div>
+          </div>
+          <div class="feriado-list" id="feriadoList"></div>
+        </div>
+        <div class="cfgsec">
+          <h4>🔒 Bloquear fechas</h4>
+          <div class="frow" style="margin-bottom:10px">
+            <div class="fg" style="margin:0"><label>Fecha a bloquear</label><input type="date" id="bloqueoDate"></div>
+            <div class="fg" style="margin:0;display:flex;align-items:flex-end"><button class="btsave" style="width:100%;background:var(--warn);" onclick="agregarBloqueo()">🔒 Bloquear</button></div>
+          </div>
+          <div class="feriado-list" id="bloqueoList"></div>
+        </div>
+        <div class="cfgsec">
+          <h4>👤 Precios Particular</h4>
+          <div class="cfggrid">
+            <div class="cg"><label>Lunes a Viernes</label><div class="ciw"><span>$</span><input type="number" class="ci" id="pPLV" step="1000"></div></div>
+            <div class="cg"><label>Sáb / Dom / Feriado</label><div class="ciw"><span>$</span><input type="number" class="ci" id="pPF" step="1000"></div></div>
+            <div class="cg cgfull"><label>Seguro por roturas</label><div class="ciw"><span>$</span><input type="number" class="ci" id="pSP" step="1000"></div></div>
+          </div>
+        </div>
+        <div class="cfgsec">
+          <h4>🏷️ Precios Afiliado</h4>
+          <div class="cfggrid">
+            <div class="cg"><label>Lunes a Viernes</label><div class="ciw"><span>$</span><input type="number" class="ci" id="pALV" step="1000"></div></div>
+            <div class="cg"><label>Sáb / Dom / Feriado</label><div class="ciw"><span>$</span><input type="number" class="ci" id="pAF" step="1000"></div></div>
+            <div class="cg cgfull"><label>Seguro afiliado</label><div class="ciw"><span>$</span><input type="number" class="ci" id="pSA" step="1000"></div></div>
+          </div>
+        </div>
+        <button class="btsave" onclick="guardarPrecios()">💾 Guardar precios</button>
+        <div class="cfgsec" style="margin-top:12px">
+          <h4>🔑 Cambiar contraseña de administrador</h4>
+          <div class="cfggrid">
+            <div class="cg cgfull"><label>Contraseña actual</label><input type="password" class="ci" id="passActual" placeholder="Contraseña actual" style="padding:9px 10px"></div>
+            <div class="cg"><label>Nueva contraseña</label><input type="password" class="ci" id="passNueva" placeholder="Nueva contraseña" style="padding:9px 10px"></div>
+            <div class="cg"><label>Repetir nueva</label><input type="password" class="ci" id="passRepetir" placeholder="Repetir nueva" style="padding:9px 10px"></div>
+          </div>
+          <button class="btsave" style="margin-top:10px;background:var(--g1)" onclick="cambiarPass()">🔑 Cambiar contraseña</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mov" id="modal">
+  <div class="modal">
+    <div style="font-size:2.6rem;margin-bottom:9px">🎉</div>
+    <h2>¡Pre-reserva Enviada!</h2>
+    <p>Tu código de reserva es:</p>
+    <div class="mcode" id="mCode">---</div>
+    <div id="mDetalle" style="background:var(--g6);border:1px solid var(--border);border-radius:8px;padding:9px 13px;margin-bottom:10px;font-size:.82rem;text-align:left;line-height:1.75;color:var(--text)"></div>
+    <div class="mprice" id="mPrecio"></div>
+    <div class="mwarn">⏳ Tenés <strong>48 horas</strong> para confirmar.<br>Acercate a firmar el contrato:<br><strong>Rondeau 151, Llavallol · Lun–Vie 10 a 16hs</strong></div>
+    <p style="margin-bottom:13px;font-size:.81rem">📌 Guardá este código.</p>
+    <button class="btns" onclick="closeModal()">Entendido ✓</button>
+  </div>
+</div>
+<div class="mov" id="modalCancel">
+  <div class="modal">
+    <div style="font-size:2.2rem;margin-bottom:9px">❌</div>
+    <h2>Cancelar Pre-reserva</h2>
+    <p style="margin-bottom:14px">Ingresá el código de reserva que recibiste para cancelarla.</p>
+    <div class="fg" style="text-align:left;margin-bottom:12px">
+      <label>Código de reserva</label>
+      <input type="text" id="cancelCodigo" placeholder="Ej: SDV-012" style="text-transform:uppercase">
+    </div>
+    <div id="cancelMsg" style="font-size:.82rem;margin-bottom:10px;min-height:20px"></div>
+    <div style="display:flex;gap:10px;justify-content:center">
+      <button class="btns" style="background:var(--danger)" onclick="confirmarCancelacion()">Cancelar reserva</button>
+      <button class="btns" style="background:var(--muted)" onclick="closeCancelModal()">Volver</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<!-- Firebase SDK -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, set, get, update, remove, onValue, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBViAkJVz4AcKxiEUmmwpeWqGhx_Bh8au8",
+  authDomain: "salon-glass.firebaseapp.com",
+  databaseURL: "https://salon-glass-default-rtdb.firebaseio.com",
+  projectId: "salon-glass",
+  storageBucket: "salon-glass.firebasestorage.app",
+  messagingSenderId: "430580974300",
+  appId: "1:430580974300:web:6eca6f713008e872b7ea19"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+// ── HELPERS DB ──
+const dbGet = async (path) => { const s = await get(ref(db, path)); return s.exists() ? s.val() : null; };
+const dbSet = (path, val) => set(ref(db, path), val);
+const dbUpdate = (path, val) => update(ref(db, path), val);
+const dbRemove = (path) => remove(ref(db, path));
+
+// ── ESTADO LOCAL (cache) ──
+let DB = { reservas:{}, config:{}, feriados:[], bloqueos:[], limite:{mes:5,anio:new Date().getFullYear()}, pass:'salon2024', gastos:{} };
+
+// ── CARGAR TODO DESDE FIREBASE ──
+async function cargarTodo() {
+  try {
+    setTimeout(()=>{
+      const msg=document.getElementById('loadingMsg');
+      if(msg&&document.getElementById('loadingScreen').style.display!=='none')
+        msg.textContent='Esto está tardando más de lo normal, verificá tu conexión...';
+    }, 5000);
+    const timeout = new Promise((_,rej) => setTimeout(()=>rej(new Error('timeout')), 8000));
+    const carga = Promise.all([
+      dbGet('reservas'), dbGet('config'), dbGet('feriados'),
+      dbGet('bloqueos'), dbGet('limite'), dbGet('pass'), dbGet('gastos')
+    ]);
+    const [reservas, config, feriados, bloqueos, limite, pass, gastos] = await Promise.race([carga, timeout]);
+    DB.reservas = reservas || {};
+    DB.config = config || {pLV:120000,pF:150000,sP:50000,aLV:90000,aF:130000,sA:30000};
+    DB.feriados = feriados ? Object.values(feriados) : [];
+    DB.bloqueos = bloqueos ? Object.values(bloqueos) : [];
+    DB.limite = limite || {mes:5,anio:new Date().getFullYear()};
+    DB.pass = pass || 'salon2024';
+    DB.gastos = gastos || {};
+  } catch(e) {
+    // Si hay error o timeout, usamos valores por defecto y mostramos igual
+    console.warn('Firebase:', e.message);
+    DB.config = DB.config || {pLV:120000,pF:150000,sP:50000,aLV:90000,aF:130000,sA:30000};
+    DB.limite = DB.limite || {mes:5,anio:new Date().getFullYear()};
+    DB.pass = DB.pass || 'salon2024';
+  } finally {
+    document.getElementById('loadingScreen').style.display = 'none';
+    renderCal();
+  }
+}
+
+// Escuchar cambios en tiempo real en reservas
+onValue(ref(db,'reservas'), snap => {
+  DB.reservas = snap.exists() ? snap.val() : {};
+  chkVenc();
+  renderCal();
+  if(document.getElementById('adminPanel')?.style.display !== 'none'){
+    renderAdmin();
+    // Si la pestaña Maxi está activa, re-renderizarla también
+    if(document.getElementById('tab-maxi')?.classList.contains('active')) renderMaxi();
+  }
+});
+onValue(ref(db,'feriados'), snap => {
+  DB.feriados = snap.exists() ? Object.values(snap.val()) : [];
+  renderCal();
+});
+onValue(ref(db,'bloqueos'), snap => {
+  DB.bloqueos = snap.exists() ? Object.values(snap.val()) : [];
+  renderCal();
+});
+onValue(ref(db,'config'), snap => {
+  if(snap.exists()) DB.config = snap.val();
+});
+onValue(ref(db,'limite'), snap => {
+  if(snap.exists()) DB.limite = snap.val();
+});
+onValue(ref(db,'pass'), snap => {
+  if(snap.exists()) DB.pass = snap.val();
+});
+onValue(ref(db,'gastos'), snap => {
+  DB.gastos = snap.exists() ? snap.val() : {};
+  if(nivelAdmin==='seccion'&&seccionActiva==='gastos') renderGastos();
+  renderMenuStats();
+});
+
+// ── RESERVAS ──
+const getR = () => Object.entries(DB.reservas).map(([k,r])=>({...r,id:r.id||k}));
+
+async function nextCod() {
+  const nums = getR().map(x=>parseInt((x.codigo||'').replace('SDV-',''))).filter(n=>!isNaN(n));
+  return 'SDV-'+String((nums.length?Math.max(...nums):0)+1).padStart(3,'0');
+}
+
+async function chkVenc() {
+  const now = Date.now();
+  const updates = {};
+  Object.entries(DB.reservas).forEach(([k,r])=>{
+    if(r.estado==='pendiente' && now-r.ts > 48*3600*1000) updates[`reservas/${k}/estado`]='vencida';
+  });
+  if(Object.keys(updates).length) update(ref(db), updates);
+}
+
+// ── PRECIOS ──
+const getP = () => DB.config;
+const esFinde = ds => { const d=new Date(ds+'T12:00:00').getDay(); return d===0||d===6||esFeriado(ds); };
+const calcP = (ds,afil) => {
+  const p=getP(), finde=esFinde(ds);
+  const base=afil?(finde?p.aF:p.aLV):(finde?p.pF:p.pLV);
+  const seg=afil?p.sA:p.sP;
+  const total=base+seg, sena=Math.round(total/2), maxi30=Math.round(base*0.3);
+  return {base,seg,total,sena,maxi30};
+};
+const fmt = n=>'$'+Number(n||0).toLocaleString('es-AR');
+
+// ── FERIADOS ──
+const esFeriado = ds => DB.feriados.includes(ds);
+
+window.agregarFeriado = async () => {
+  const val=document.getElementById('feriadoDate').value;
+  if(!val){showToast('⚠️ Elegí una fecha');return;}
+  if(DB.feriados.includes(val)){showToast('Ya está marcada como feriado');return;}
+  const arr=[...DB.feriados,val].sort();
+  const obj={}; arr.forEach((f,i)=>obj[i]=f);
+  await dbSet('feriados',obj);
+  document.getElementById('feriadoDate').value='';
+  renderFeriados(); showToast('✅ Feriado agregado');
+};
+window.elimFeriado = async ds => {
+  const arr=DB.feriados.filter(f=>f!==ds);
+  const obj={}; arr.forEach((f,i)=>obj[i]=f);
+  await dbSet('feriados',Object.keys(obj).length?obj:null);
+  renderFeriados();
+};
+function renderFeriados() {
+  const list=document.getElementById('feriadoList');
+  const DIAS=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  if(!DB.feriados.length){list.innerHTML='<p style="font-size:.78rem;color:var(--muted)">No hay feriados cargados.</p>';return;}
+  list.innerHTML=DB.feriados.map(ds=>{
+    const[y,m,d]=ds.split('-'),dn=DIAS[new Date(ds+'T12:00:00').getDay()];
+    return`<div class="feriado-item"><span>📅 ${dn} ${d}/${m}/${y} — tarifa fin de semana</span><button class="feriado-del" onclick="elimFeriado('${ds}')">Quitar</button></div>`;
+  }).join('');
+}
+
+// ── BLOQUEOS ──
+const esBloqueado = ds => DB.bloqueos.some(b=>b.fecha===ds);
+
+window.agregarBloqueo = async () => {
+  const val=document.getElementById('bloqueoDate').value;
+  if(!val){showToast('⚠️ Elegí una fecha');return;}
+  if(DB.bloqueos.some(b=>b.fecha===val)){showToast('Esa fecha ya está bloqueada');return;}
+  const motivo=prompt('Motivo del bloqueo (opcional):','Uso interno')||'Uso interno';
+  const arr=[...DB.bloqueos,{fecha:val,motivo}].sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  const obj={}; arr.forEach((b,i)=>obj[i]=b);
+  await dbSet('bloqueos',obj);
+  document.getElementById('bloqueoDate').value='';
+  renderBloqueos(); showToast('🔒 Fecha bloqueada');
+};
+window.elimBloqueo = async ds => {
+  const arr=DB.bloqueos.filter(b=>b.fecha!==ds);
+  const obj={}; arr.forEach((b,i)=>obj[i]=b);
+  await dbSet('bloqueos',Object.keys(obj).length?obj:null);
+  renderBloqueos();
+};
+function renderBloqueos() {
+  const list=document.getElementById('bloqueoList');
+  const DIAS=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  if(!DB.bloqueos.length){list.innerHTML='<p style="font-size:.78rem;color:var(--muted)">No hay fechas bloqueadas.</p>';return;}
+  list.innerHTML=DB.bloqueos.map(b=>{
+    const[y,m,d]=b.fecha.split('-'),dn=DIAS[new Date(b.fecha+'T12:00:00').getDay()];
+    return`<div class="feriado-item" style="background:#f0f0f0;border-color:#ccc"><span style="color:#555">🔒 ${dn} ${d}/${m}/${y} — ${b.motivo}</span><button class="feriado-del" onclick="elimBloqueo('${b.fecha}')">Quitar</button></div>`;
+  }).join('');
+}
+
+// ── LÍMITE CALENDARIO ──
+const getLimite = () => DB.limite;
+function fechaBloqueada(ds) {
+  const l=getLimite(),[y,m]=ds.split('-').map(Number);
+  return y>l.anio||(y===l.anio&&m-1>l.mes);
+}
+window.guardarLimite = async () => {
+  const mes=parseInt(document.getElementById('limMes').value);
+  const anio=parseInt(document.getElementById('limAnio').value);
+  await dbSet('limite',{mes,anio});
+  renderCal(); showToast('✅ Límite actualizado');
+};
+function loadLimiteUI() {
+  const l=getLimite();
+  document.getElementById('limMes').value=l.mes;
+  const sel=document.getElementById('limAnio'); sel.innerHTML='';
+  const hoy=new Date().getFullYear();
+  for(let y=hoy;y<=hoy+2;y++){const o=document.createElement('option');o.value=y;o.textContent=y;sel.appendChild(o);}
+  sel.value=l.anio;
+}
+
+// ── CALENDARIO ──
+let vy=new Date().getFullYear(),vm=new Date().getMonth(),selD=null,selS=null;
+const MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const DIAS=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+
+function getShifts(ds) {
+  return esFinde(ds)
+    ?[{id:'man',n:'Turno Mañana',t:'12:30 – 16:30'},{id:'noch',n:'Turno Noche',t:'18:00 – 22:00'},{id:'dt',n:'Día Completo',t:'13:00 – 21:00',doble:true}]
+    :[{id:'lv',n:'Turno Único',t:'17:30 – 21:30'}];
+}
+function getDSt(ds) {
+  if(fechaBloqueada(ds)||esBloqueado(ds))return'blocked';
+  const res=getR();
+  const act=res.filter(r=>r.fecha===ds&&['pendiente','confirmada','realizada'].includes(r.estado));
+  if(!esFinde(ds)){
+    return act.find(r=>r.turnoId==='lv')?'full':'available';
+  }
+  // Finde: contar cuántos de los 2 turnos reales (man/noch) están ocupados
+  // 'dt' ocupa ambos
+  const manOcupado=act.find(r=>r.turnoId==='man'||r.turnoId==='dt');
+  const nochOcupado=act.find(r=>r.turnoId==='noch'||r.turnoId==='dt');
+  const ocup=(manOcupado?1:0)+(nochOcupado?1:0);
+  return ocup===0?'available':ocup<2?'partial':'full';
+}
+window.renderCal = function() {
+  document.getElementById('calTitle').textContent=`${MESES[vm]} ${vy}`;
+  const g=document.getElementById('calGrid'); g.innerHTML='';
+  DIAS.forEach(d=>{const e=document.createElement('div');e.className='cdn';e.textContent=d;g.appendChild(e);});
+  const first=new Date(vy,vm,1).getDay(),days=new Date(vy,vm+1,0).getDate();
+  const today=new Date(); today.setHours(0,0,0,0);
+  const mesDs=`${vy}-${String(vm+1).padStart(2,'0')}-01`;
+  const mesBlocked=fechaBloqueada(mesDs);
+  const bmsg=document.getElementById('calBlockedMsg');
+  if(mesBlocked){bmsg.style.display='block';const l=getLimite();bmsg.textContent=`Las reservas están habilitadas hasta ${MESES[l.mes]} ${l.anio}.`;}
+  else bmsg.style.display='none';
+  for(let i=0;i<first;i++){const e=document.createElement('div');e.className='cd empty';g.appendChild(e);}
+  for(let d=1;d<=days;d++){
+    const e=document.createElement('div');
+    const dt=new Date(vy,vm,d); dt.setHours(0,0,0,0);
+    const ds=`${vy}-${String(vm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    e.textContent=d;
+    if(dt.getTime()===today.getTime())e.classList.add('today');
+    if(dt<today){e.className='cd past';}
+    else{
+      const st=getDSt(ds);
+      e.className=`cd ${st}`;
+      if(esFeriado(ds)){e.classList.add('feriado');e.classList.add('feriado-dot');}
+      if(esBloqueado(ds))e.title='Fecha bloqueada';
+      if(selD===ds)e.classList.add('selected');
+      if(st==='available'||st==='partial')e.onclick=()=>selDay(ds);
+    }
+    g.appendChild(e);
+  }
+};
+function selDay(ds){
+  selD=ds;selS=null;renderCal();renderShifts();
+  document.getElementById('secTurno').style.display='block';
+  document.getElementById('secPrecio').style.display='none';
+  document.getElementById('secForm').style.display='none';
+  document.getElementById('secTurno').scrollIntoView({behavior:'smooth',block:'start'});
+}
+window.chMes = d=>{ vm+=d; if(vm>11){vm=0;vy++;}if(vm<0){vm=11;vy--;}renderCal(); };
+
+// ── TURNOS ──
+function renderShifts(){
+  const w=document.getElementById('shwrap'); w.innerHTML='';
+  if(!selD)return;
+  const res=getR(),sh=getShifts(selD);
+  const act=res.filter(r=>r.fecha===selD&&['pendiente','confirmada','realizada'].includes(r.estado));
+  const tkIds=act.map(r=>r.turnoId);
+  const[y,m,d]=selD.split('-');
+  const ferTag=esFeriado(selD)?'<span style="font-size:.7rem;background:var(--warn-bg);color:var(--warn);padding:2px 7px;border-radius:10px;margin-left:6px;border:1px solid var(--gold-l)">📅 Feriado</span>':'';
+  const sub=document.createElement('p'); sub.style.cssText='font-size:.81rem;color:var(--muted);margin-bottom:9px';
+  sub.innerHTML=`${DIAS[new Date(selD+'T12:00:00').getDay()]} ${d}/${m}/${y}${ferTag}`; w.appendChild(sub);
+  const afil=document.getElementById('chkAfil')?.checked||false;
+  sh.forEach(s=>{
+    const pr=calcP(selD,afil);
+    // Para 'dt' (día completo): está disponible solo si man Y noch están libres
+    let taken;
+    if(s.id==='dt'){
+      const manTaken=act.find(r=>r.turnoId==='man'||r.turnoId==='dt');
+      const nochTaken=act.find(r=>r.turnoId==='noch'||r.turnoId==='dt');
+      taken=!!(manTaken||nochTaken);
+    } else if(s.id==='man'||s.id==='noch'){
+      // Un turno individual no está disponible si hay un 'dt' reservado
+      taken=tkIds.includes(s.id)||act.find(r=>r.turnoId==='dt');
+    } else {
+      taken=tkIds.includes(s.id);
+    }
+    // Precio del día completo = base*2 + seg (un solo seguro)
+    const precioBase=s.id==='dt'?pr.base*2:pr.base;
+    const precioSeg=pr.seg;
+    const precioMostrar=precioBase+precioSeg;
+    const c=document.createElement('div');
+    c.className=`shcard ${taken?'disabled':''} ${selS===s.id&&!taken?'selected':''}`;
+    const dtNote=s.id==='dt'?`<div style="font-size:.72rem;color:var(--blue);margin-top:2px">Alquiler x2 + 1 solo seguro</div>`:'';
+    c.innerHTML=`<div><div class="sh-n">${s.n}${s.doble?` <span style="font-size:.65rem;background:var(--blue-bg);color:var(--blue);padding:1px 6px;border-radius:8px;border:1px solid var(--blue-b)">Día completo</span>`:''}</div><div class="sh-t">🕐 ${s.t}</div>${!taken?`<div class="sh-p">Alquiler: ${fmt(precioBase)} + Seguro: ${fmt(precioSeg)}</div>${dtNote}`:''}</div><span class="shbadge ${taken?'bno':'bok'}">${taken?'Ocupado':'Disponible'}</span>`;
+    if(!taken)c.onclick=()=>selTurno(s.id);
+    w.appendChild(c);
+  });
+}
+function selTurno(id){
+  selS=id;renderShifts();renderPrice();
+  document.getElementById('secPrecio').style.display='block';
+  document.getElementById('secForm').style.display='block';
+  document.getElementById('secPrecio').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function renderPrice(){
+  if(!selD||!selS)return;
+  const afil=document.getElementById('chkAfil')?.checked||false;
+  const p=calcP(selD,afil),tipo=afil?'Afiliado':'Particular';
+  const isDT=selS==='dt';
+  const base=isDT?p.base*2:p.base;
+  const total=base+p.seg;
+  const sena=Math.round(total/2);
+  document.getElementById('precioRows').innerHTML=`
+    <div class="pr"><span>Alquiler (${tipo})${isDT?' × 2 turnos':''}</span><span>${fmt(base)}</span></div>
+    <div class="pr"><span>Seguro por roturas</span><span>${fmt(p.seg)}</span></div>
+    <div class="pr total"><span>Total del evento</span><span>${fmt(total)}</span></div>
+    <div class="pr sena"><span>💵 Seña sugerida (50%)</span><span>${fmt(sena)}</span></div>
+    <p class="pr-note">* El seguro (${fmt(p.seg)}) se devuelve si no hay roturas.</p>
+    ${isDT?'<p class="pr-note" style="color:var(--blue)">📅 Día completo: cubre ambos turnos (13:00 a 21:00hs)</p>':''}
+    ${afil?'<p class="pr-note" style="color:var(--blue)">ℹ️ Sujeto a verificación de afiliación.</p>':''}`;
+}
+window.toggleAfil=()=>{ setTimeout(()=>{const ch=document.getElementById('chkAfil').checked;document.getElementById('abox').classList.toggle('show',ch);if(selS){renderShifts();renderPrice();}},0); };
+window.chkPer=()=>{ const v=parseInt(document.getElementById('fPer').value);document.getElementById('perWarn').style.display=v>80?'block':'none'; };
+
+// ── SUBMIT ──
+window.submitRes = async () => {
+  if(!selD||!selS){showToast('⚠️ Elegí fecha y turno');return;}
+  const n=document.getElementById('fN').value.trim(),ap=document.getElementById('fAp').value.trim();
+  const tel=document.getElementById('fTel').value.trim(),tipo=document.getElementById('fTipo').value;
+  const per=parseInt(document.getElementById('fPer').value);
+  const afil=document.getElementById('chkAfil').checked;
+  const emp=document.getElementById('fEmp').value.trim(),dni=document.getElementById('fDni').value.trim();
+  if(!n||!ap||!tel||!tipo||!per){showToast('⚠️ Completá todos los campos');return;}
+  if(per>80){showToast('⚠️ Máximo 80 personas');return;}
+  if(afil&&(!emp||!dni)){showToast('⚠️ Completá empresa y DNI');return;}
+  await chkVenc();
+  const res=getR();
+  if(res.find(r=>r.fecha===selD&&r.turnoId===selS&&['pendiente','confirmada','realizada'].includes(r.estado))){showToast('❌ Turno no disponible');renderShifts();return;}
+  const sh=getShifts(selD).find(s=>s.id===selS);
+  const isDT=selS==='dt';
+  const prBase=calcP(selD,afil);
+  const pr={...prBase,base:isDT?prBase.base*2:prBase.base};
+  pr.total=pr.base+pr.seg; pr.sena=Math.round(pr.total/2); pr.maxi30=Math.round(pr.base*0.3);
+  const cod=await nextCod();
+  const newRef=push(ref(db,'reservas'));
+  const newR={
+    id:newRef.key, codigo:cod, nroContrato:'',
+    nombre:`${n} ${ap}`,tel,tipoEvento:tipo,personas:per,
+    consultas:document.getElementById('fCons').value.trim(),
+    afiliado:afil,empresa:afil?emp:'',dni:afil?dni:'',
+    fecha:selD,turnoId:selS,turnoNombre:sh.n,turnoHora:sh.t,
+    precioBase:pr.base,precioSeg:pr.seg,precioTotal:pr.total,precioSena:pr.sena,precioMaxi:pr.maxi30,
+    montoCobrado:'',totalCobrado:'',segDevuelto:false,maxiPagado:false,fechaMaxiPago:'',
+    estado:'pendiente',ts:Date.now(),fechaReserva:new Date().toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})
+  };
+  await set(newRef, newR);
+  ['fN','fAp','fTel','fPer','fCons','fEmp','fDni'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  document.getElementById('fTipo').value='';
+  document.getElementById('chkAfil').checked=false;
+  document.getElementById('abox').classList.remove('show');
+  selD=null;selS=null;renderCal();
+  ['secTurno','secPrecio','secForm'].forEach(id=>document.getElementById(id).style.display='none');
+  document.getElementById('mCode').textContent=cod;
+  const _DM=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const [_fy,_fm,_fd]=selD.split('-');
+  document.getElementById('mDetalle').innerHTML=`📅 <strong>Fecha:</strong> ${_DM[new Date(selD+'T12:00:00').getDay()]} ${_fd}/${_fm}/${_fy} &nbsp;·&nbsp; 🕐 <strong>Turno:</strong> ${sh.n} (${sh.t})<br>📋 <strong>Pre-reserva hecha el:</strong> ${new Date().toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}`;
+  document.getElementById('mPrecio').innerHTML=`💰 Alquiler: <strong>${fmt(pr.base)}</strong> + Seguro: <strong>${fmt(pr.seg)}</strong><br>Total: <strong>${fmt(pr.total)}</strong> · Seña: <strong>${fmt(pr.sena)}</strong>`;
+  document.getElementById('modal').classList.add('open');
+};
+window.closeModal=()=>document.getElementById('modal').classList.remove('open');
+window.openCancelModal=()=>{
+  document.getElementById('cancelCodigo').value='';
+  document.getElementById('cancelMsg').innerHTML='';
+  document.getElementById('modalCancel').classList.add('open');
+};
+window.closeCancelModal=()=>document.getElementById('modalCancel').classList.remove('open');
+window.confirmarCancelacion=async()=>{
+  const cod=document.getElementById('cancelCodigo').value.trim().toUpperCase();
+  const msg=document.getElementById('cancelMsg');
+  if(!cod){msg.innerHTML='<span style="color:var(--danger)">⚠️ Ingresá el código de reserva.</span>';return;}
+  const res=getR();
+  const r=res.find(r=>(r.codigo||'').toUpperCase()===cod);
+  if(!r){msg.innerHTML='<span style="color:var(--danger)">❌ Código no encontrado. Verificá que sea correcto.</span>';return;}
+  if(r.estado==='cancelada'){msg.innerHTML='<span style="color:var(--muted)">Esta reserva ya fue cancelada.</span>';return;}
+  if(r.estado==='realizada'){msg.innerHTML='<span style="color:var(--danger)">No se puede cancelar un evento ya realizado.</span>';return;}
+  if(!['pendiente','vencida'].includes(r.estado)){msg.innerHTML='<span style="color:var(--danger)">Solo podés cancelar reservas pendientes. Si tu reserva ya fue confirmada, comunicate con el salón.</span>';return;}
+  // Cancelar
+  const fk=Object.keys(DB.reservas).find(k=>k===r.id||(DB.reservas[k].id===r.id)||DB.reservas[k].codigo===cod);
+  if(!fk){msg.innerHTML='<span style="color:var(--danger)">Error al procesar. Comunicate con el salón.</span>';return;}
+  await update(ref(db,`reservas/${fk}`),{estado:'cancelada'});
+  closeCancelModal();
+  showToast('✅ Reserva '+cod+' cancelada correctamente.');
+};
+
+// ── ADMIN ──
+let curFil='todos';
+let fichaActivaId=null; // ID de la ficha actualmente abierta en el acordeón
+window.showAdminLogin=()=>{showPage('admin');document.getElementById('btnA').classList.add('active');document.getElementById('btnC').classList.remove('active');};
+window.doLogin=()=>{
+  if(document.getElementById('aPass').value===DB.pass){
+    document.getElementById('adminLogin').style.display='none';
+    document.getElementById('adminPanel').style.display='block';
+    document.getElementById('aPass').value='';
+    document.getElementById('btnA').style.display='';
+    document.getElementById('btnAdminHidden').style.display='none';
+    nivelAdmin='menu';ocultarTodoAdmin();
+    document.getElementById('adminMenu').style.display='';
+    actualizarHeader('Panel',false);
+    loadConfigUI();renderAdmin();
+  }else{showToast('❌ Contraseña incorrecta');document.getElementById('aPass').value='';document.getElementById('aPass').focus();}
+};
+window.doLogout=()=>{
+  document.getElementById('adminLogin').style.display='block';
+  document.getElementById('adminPanel').style.display='none';
+  document.getElementById('aPass').value='';
+  document.getElementById('btnA').style.display='none';
+  document.getElementById('btnAdminHidden').style.display='';
+  nivelAdmin='menu';mesActivoKey=null;fichaActivaId=null;seccionActiva=null;
+  showPage('client');
+};
+// ── NAVEGACIÓN ──
+let nivelAdmin='menu',mesActivoKey=null,seccionActiva=null;
+let ordenLista='fecha';
+const MESES_N=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const DIAS_N=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+const LABELS_SEC={stats:'Estadísticas',maxi:'Maxi',config:'Configuración',gastos:'Gastos de Seccional'};
+
+function ocultarTodoAdmin(){
+  ['adminMenu','secReservas','tab-stats','tab-maxi','tab-config','tab-gastos'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.style.display='none';
+  });
+}
+function actualizarHeader(titulo,volver){
+  document.getElementById('adminTitle').textContent=titulo;
+  document.getElementById('btnVolver').style.display=volver?'':'none';
+}
+function renderMenuStats(){
+  const res=getR();
+  const pend=res.filter(r=>r.estado==='pendiente').length;
+  const conf=res.filter(r=>r.estado==='confirmada').length;
+  const act=res.filter(r=>['confirmada','realizada'].includes(r.estado)).length;
+  const maxiPend=res.filter(r=>r.estado==='realizada'&&!r.maxiPagado).length;
+  document.getElementById('menuSubReservas').innerHTML=pend>0
+    ?`<span style="color:var(--warn);font-weight:700">⚠️ ${pend} pendiente${pend>1?'s':''}</span> · ${conf} confirmada${conf!==1?'s':''}`
+    :`${act} activa${act!==1?'s':''} · ${res.length} total`;
+  const mSub=document.getElementById('menuSubMaxi');
+  if(mSub)mSub.innerHTML=maxiPend>0?`<span style="color:var(--warn);font-weight:700">⚠️ ${maxiPend} sin pagar</span>`:'Al día ✓';
+  // gastos submenu
+  const gastos=DB.gastos?Object.values(DB.gastos):[];
+  const totalG=gastos.reduce((s,g)=>s+(Number(g.monto)||0),0);
+  const mSubG=document.getElementById('menuSubGastos');
+  if(mSubG)mSubG.textContent=totalG>0?`Total gastado: ${fmt(totalG)}`:'Sin gastos cargados';
+  document.getElementById('statRow').innerHTML=`
+    <div class="sc"><div class="scn">${res.length}</div><div class="scl">Total</div></div>
+    <div class="sc"><div class="scn" style="color:var(--warn)">${pend}</div><div class="scl">Pendientes</div></div>
+    <div class="sc"><div class="scn" style="color:var(--g2)">${act}</div><div class="scl">Activas</div></div>`;
+}
+window.irAReservas=()=>{
+  nivelAdmin='reservas';mesActivoKey=null;fichaActivaId=null;
+  ocultarTodoAdmin();
+  document.getElementById('secReservas').style.display='';
+  document.getElementById('listaMeses').style.display='';
+  document.getElementById('listaFiestas').style.display='none';
+  document.getElementById('fichaReserva').style.display='none';
+  document.getElementById('srch').value='';
+  actualizarHeader('Reservas',true);
+  renderListaMeses();
+};
+window.irASeccion=(sec)=>{
+  nivelAdmin='seccion';seccionActiva=sec;
+  ocultarTodoAdmin();
+  document.getElementById('tab-'+sec).style.display='';
+  actualizarHeader(LABELS_SEC[sec]||sec,true);
+  if(sec==='stats')renderStats();
+  else if(sec==='maxi')renderMaxi();
+  else if(sec==='config')loadConfigUI();
+  else if(sec==='gastos')renderGastos();
+};
+window.adminVolver=()=>{
+  if(nivelAdmin==='ficha'){
+    nivelAdmin='mes';fichaActivaId=null;
+    document.getElementById('fichaReserva').style.display='none';
+    document.getElementById('listaFiestas').style.display='';
+    const [ay,am]=mesActivoKey.split('-');
+    actualizarHeader(MESES_N[parseInt(am)-1]+' '+ay,true);
+  } else if(nivelAdmin==='mes'){
+    nivelAdmin='reservas';mesActivoKey=null;
+    document.getElementById('listaFiestas').style.display='none';
+    document.getElementById('listaMeses').style.display='';
+    actualizarHeader('Reservas',true);
+  } else {
+    nivelAdmin='menu';mesActivoKey=null;fichaActivaId=null;seccionActiva=null;
+    ocultarTodoAdmin();
+    document.getElementById('adminMenu').style.display='';
+    actualizarHeader('Panel',false);
+    renderMenuStats();
+  }
+};
+window.cerrarFicha=()=>{
+  nivelAdmin='mes';fichaActivaId=null;
+  document.getElementById('fichaReserva').style.display='none';
+  document.getElementById('listaFiestas').style.display='';
+  document.querySelectorAll('.fiesta-item').forEach(el=>el.classList.remove('activa'));
+};
+
+// ── LISTA DE MESES ──
+function renderListaMeses(){
+  const res=getR();
+  const srch=(document.getElementById('srch')?.value||'').toLowerCase().trim();
+  if(srch){
+    const fil=res.filter(r=>(r.nombre||'').toLowerCase().includes(srch)||(r.codigo||'').toLowerCase().includes(srch)||(r.nroContrato||'').toLowerCase().includes(srch)).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    document.getElementById('listaMeses').style.display='none';
+    document.getElementById('listaFiestas').style.display='';
+    document.getElementById('fichaReserva').style.display='none';
+    renderFiestasEnLista(fil);return;
+  }
+  let fil=curFil==='todos'?res.filter(r=>r.estado!=='cancelada'):res.filter(r=>r.estado===curFil);
+  fil.sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  const porMes={};
+  fil.forEach(r=>{const k=r.fecha.slice(0,7);if(!porMes[k])porMes[k]=[];porMes[k].push(r);});
+  const keys=Object.keys(porMes).sort();
+  const wrap=document.getElementById('listaMeses');
+  if(!keys.length){wrap.innerHTML='<div class="empty-s"><div class="big">📋</div><p>Sin reservas</p></div>';return;}
+  const colBg={pendiente:'var(--warn-bg)',confirmada:'var(--g6)',cancelada:'var(--danger-bg)',vencida:'#f0f0f0',realizada:'#e8ede8'};
+  const colTx={pendiente:'var(--warn)',confirmada:'var(--g2)',cancelada:'var(--danger)',vencida:'#888',realizada:'var(--g1)'};
+  wrap.innerHTML=keys.map(key=>{
+    const [ay,am]=key.split('-');
+    const items=porMes[key];
+    const nPend=items.filter(r=>r.estado==='pendiente').length;
+    const nConf=items.filter(r=>r.estado==='confirmada').length;
+    const nReal=items.filter(r=>r.estado==='realizada').length;
+    const nVenc=items.filter(r=>r.estado==='vencida').length;
+    let accent='var(--g3)',bg='var(--white)';
+    if(nPend>0){accent='var(--gold)';bg='#fffdf5';}
+    else if(nConf>0){accent='var(--g3)';bg='var(--g6)';}
+    else if(nReal>0){accent='#aaa';bg='#f8f8f8';}
+    const chips=[];
+    if(nPend)chips.push(`<span class="mes-chip pend">${nPend} pend.</span>`);
+    if(nConf)chips.push(`<span class="mes-chip conf">${nConf} conf.</span>`);
+    if(nReal)chips.push(`<span class="mes-chip real">${nReal} real.</span>`);
+    if(nVenc)chips.push(`<span class="mes-chip venc">${nVenc} venc.</span>`);
+    return `<div class="mes-card" style="border-left-color:${accent};background:${bg}" onclick="irAMes('${key}')">
+      <div class="mes-card-left"><div class="mes-card-num">${items.length}</div><div class="mes-card-unit">fiesta${items.length!==1?'s':''}</div></div>
+      <div class="mes-card-center"><div class="mes-card-title">${MESES_N[parseInt(am)-1]} ${ay}</div><div class="mes-card-chips">${chips.join('')}</div></div>
+      <div class="mes-card-arrow">›</div>
+    </div>`;
+  }).join('');
+}
+window.irAMes=(key)=>{
+  nivelAdmin='mes';mesActivoKey=key;fichaActivaId=null;
+  const [ay,am]=key.split('-');
+  actualizarHeader(MESES_N[parseInt(am)-1]+' '+ay,true);
+  document.getElementById('listaMeses').style.display='none';
+  document.getElementById('listaFiestas').style.display='';
+  document.getElementById('fichaReserva').style.display='none';
+  let fil=getR().filter(r=>r.fecha.startsWith(key));
+  if(ordenLista==='nombre') fil.sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+  else if(ordenLista==='estado') fil.sort((a,b)=>(a.estado||'').localeCompare(b.estado||'')||a.fecha.localeCompare(b.fecha));
+  else fil.sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  renderFiestasEnLista(fil);
+};
+function renderFiestasEnLista(fil){
+  const colBg={pendiente:'var(--warn-bg)',confirmada:'var(--g6)',cancelada:'var(--danger-bg)',vencida:'#f0f0f0',realizada:'#e8ede8'};
+  const colTx={pendiente:'var(--warn)',confirmada:'var(--g2)',cancelada:'var(--danger)',vencida:'#888',realizada:'var(--g1)'};
+  const EL={pendiente:'Pendiente',confirmada:'Confirmada',cancelada:'Cancelada',vencida:'Vencida',realizada:'Realizada'};
+  const wrap=document.getElementById('fichasDelMes');
+  if(!fil.length){wrap.innerHTML='<div class="empty-s"><div class="big">📋</div><p>Sin reservas</p></div>';return;}
+  wrap.innerHTML=fil.map(r=>{
+    const [ry,rm,rd]=r.fecha.split('-');
+    const dn=DIAS_N[new Date(r.fecha+'T12:00:00').getDay()];
+    const est=r.estado||'pendiente';
+    const aTag=r.afiliado?` <span style="font-size:.58rem;background:var(--blue-bg);color:var(--blue);padding:1px 5px;border-radius:6px;font-weight:700;border:1px solid var(--blue-b)">AFI</span>`:'';
+    return `<div class="fiesta-item${fichaActivaId===r.id?' activa':''}" id="fitem_${r.id}" onclick="irAFicha('${r.id}')">
+      <div style="flex:1;min-width:0">
+        <div class="fi-nombre">${r.nombre}${aTag}</div>
+        <div class="fi-detalle">${dn} ${rd}/${rm} · ${r.turnoNombre}${r.codigo?' · '+r.codigo:''}</div>
+      </div>
+      <span class="fi-estado" style="background:${colBg[est]};color:${colTx[est]}">${EL[est]||est}</span>
+    </div>`;
+  }).join('');
+}
+window.irAFicha=(id)=>{
+  if(fichaActivaId===id&&document.getElementById('fichaReserva').style.display!=='none'){cerrarFicha();return;}
+  nivelAdmin='ficha';fichaActivaId=id;
+  document.querySelectorAll('.fiesta-item').forEach(el=>el.classList.remove('activa'));
+  const item=document.getElementById('fitem_'+id);if(item)item.classList.add('activa');
+  document.getElementById('listaFiestas').style.display='none';
+  document.getElementById('fichaReserva').style.display='';
+  if(mesActivoKey){const [ay,am]=mesActivoKey.split('-');actualizarHeader(MESES_N[parseInt(am)-1]+' '+ay,true);}
+  mostrarFichaAdmin(id);
+};
+window.onBuscar=()=>{
+  nivelAdmin='reservas';mesActivoKey=null;fichaActivaId=null;
+  document.getElementById('listaMeses').style.display='';
+  document.getElementById('listaFiestas').style.display='none';
+  document.getElementById('fichaReserva').style.display='none';
+  actualizarHeader('Reservas',true);
+  renderListaMeses();
+};
+window.setFil=(f,btn)=>{
+  curFil=f;fichaActivaId=null;
+  document.querySelectorAll('.fb').forEach(b=>b.classList.remove('active'));btn.classList.add('active');
+  nivelAdmin='reservas';mesActivoKey=null;
+  document.getElementById('listaMeses').style.display='';
+  document.getElementById('listaFiestas').style.display='none';
+  document.getElementById('fichaReserva').style.display='none';
+  renderListaMeses();
+};
+window.cambiarOrden=(ord)=>{
+  ordenLista=ord;
+  document.querySelectorAll('.ord-btn').forEach(b=>b.classList.remove('active'));
+  const mapId={fecha:'ordFecha',nombre:'ordNombre',estado:'ordEstado'};
+  const btn=document.getElementById(mapId[ord]);if(btn)btn.classList.add('active');
+  if(nivelAdmin==='mes'&&mesActivoKey)irAMes(mesActivoKey);
+  else renderListaMeses();
+};
+window.swTab=(tab,btn)=>{irASeccion(tab);}; // compat
+
+function renderAdmin(){
+  renderMenuStats();
+  if(nivelAdmin==='reservas') renderListaMeses();
+  else if(nivelAdmin==='mes'&&mesActivoKey) irAMes(mesActivoKey);
+  else if(nivelAdmin==='ficha'&&fichaActivaId) mostrarFichaAdmin(fichaActivaId);
+  else if(nivelAdmin==='seccion'){
+    if(seccionActiva==='maxi')renderMaxi();
+    if(seccionActiva==='stats')renderStats();
+    if(seccionActiva==='gastos')renderGastos();
+  }
+  // stub compat
+  const res=getR();const srch='';let fil=[];
+  fil=[...fil].sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||''));
+
+  // ── NAVEGADOR POR MES ──
+  const mesWrap=document.getElementById('mesNavWrap');
+  const MS2=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const DIAS2=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+
+  if(srch){
+    // Con búsqueda: ocultar acordeón, mostrar lista normal
+    mesWrap.style.display='none';
+  } else {
+    // Sin búsqueda: mostrar acordeón por mes, lista vacía hasta que el usuario abra un mes
+    mesWrap.style.display='';
+    const porMes={};
+    fil.forEach(r=>{
+      const key=r.fecha.slice(0,7);
+      if(!porMes[key])porMes[key]=[];
+      porMes[key].push(r);
+    });
+    const keys=Object.keys(porMes).sort();
+    const EL2={pendiente:'Pendiente',confirmada:'Confirmada',cancelada:'Cancelada',vencida:'Vencida',realizada:'Realizada'};
+    const colBg={pendiente:'var(--warn-bg)',confirmada:'var(--g6)',cancelada:'var(--danger-bg)',vencida:'#f0f0f0',realizada:'var(--g1)'};
+    const colTx={pendiente:'var(--warn)',confirmada:'var(--g2)',cancelada:'var(--danger)',vencida:'#888',realizada:'var(--g4)'};
+    // Guardar qué meses están abiertos antes de reconstruir
+    const abiertos=new Set();
+    mesWrap.querySelectorAll('.mes-nav-body.open').forEach(el=>abiertos.add(el.id));
+
+    mesWrap.innerHTML=(keys.length?'':`<div class="empty-s"><div class="big">📋</div><p>Sin resultados</p></div>`)+
+    keys.map(key=>{
+      const[ay,am]=key.split('-');
+      const items=porMes[key];
+      const mesId='mesBody_'+key.replace('-','_');
+      return `<div class="mes-nav">
+        <div class="mes-nav-header" onclick="(function(h){const b=document.getElementById('${mesId}');const open=b.classList.toggle('open');h.querySelector('.mes-nav-arrow').classList.toggle('open',open);})(this)">
+          <div><div class="mes-nav-title">📅 ${MS2[parseInt(am)-1]} ${ay}</div><div class="mes-nav-meta">${items.length} fiesta${items.length!==1?'s':''}</div></div>
+          <span class="mes-nav-arrow">▼</span>
+        </div>
+        <div class="mes-nav-body" id="${mesId}">
+          ${items.map(r=>{
+            const[ry,rm,rd]=r.fecha.split('-');
+            const dn2=DIAS2[new Date(r.fecha+'T12:00:00').getDay()];
+            const est=r.estado||'pendiente';
+            const diasVenc=Math.floor((Date.now()-r.ts)/(1000*60*60*24));
+            const fechaResTag=est==='vencida'?` <span style="font-size:.65rem;background:var(--warn-bg);color:var(--warn);padding:1px 5px;border-radius:8px;font-weight:700">reservó hace ${diasVenc}d</span>`:'';
+            return `<div class="mes-nav-item" onclick="mostrarFichaAdmin('${r.id}')">
+              <div><div class="mn-name">${r.nombre}${r.afiliado?' <span class="abadge" style="font-size:.6rem">AFI</span>':''}${fechaResTag}</div><div class="mn-info">${dn2} ${rd}/${rm}/${ry} · ${r.turnoNombre}</div></div>
+              <span style="font-size:.62rem;padding:2px 7px;border-radius:10px;font-weight:700;background:${colBg[est]};color:${colTx[est]}">${EL2[est]||est}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }).join('');
+
+    // Restaurar los meses que estaban abiertos
+    abiertos.forEach(mesId=>{
+      const body=document.getElementById(mesId);
+      if(body){
+        body.classList.add('open');
+        const header=body.previousElementSibling;
+        if(header)header.querySelector('.mes-nav-arrow')?.classList.add('open');
+      }
+    });
+
+    // La lista de fichas: si hay una ficha activa la re-muestra, sino muestra mensaje
+    if(fichaActivaId && DB.reservas[fichaActivaId]){
+      // Re-mostrar la ficha activa después del re-render del acordeón
+      setTimeout(()=>mostrarFichaAdmin(fichaActivaId, true), 0);
+    } else {
+      const list=document.getElementById('resList');
+      if(!list.dataset.loaded){
+        list.innerHTML=`<div style="text-align:center;padding:20px 16px;color:var(--muted);font-size:.82rem">👆 Tocá un mes para ver las reservas</div>`;
+      }
+    }
+    return; // salir — no renderizar lista completa abajo
+  }
+
+  const list=document.getElementById('resList');
+  list.dataset.loaded='1';
+  if(!fil.length){list.innerHTML=`<div class="empty-s"><div class="big">📋</div><p>Sin resultados</p></div>`;return;}
+  list.innerHTML=fil.map(r=>{
+    const[y,m,d]=r.fecha.split('-'),dn=DIAS[new Date(r.fecha+'T12:00:00').getDay()];
+    let cd='';
+    if(r.estado==='pendiente'){const rem=(r.ts+48*3600*1000)-Date.now();if(rem>0){const h=Math.floor(rem/3600000),mn=Math.floor((rem%3600000)/60000);cd=`<div class="rccd">⏳ Vence en ${h}h ${mn}m</div>`;}}
+    const EL={pendiente:'Pendiente',confirmada:'Confirmada',cancelada:'Cancelada',vencida:'Vencida',realizada:'Realizada'}[r.estado]||r.estado;
+    const eCls={pendiente:'ep',confirmada:'ec',cancelada:'ex',vencida:'ev',realizada:'er'}[r.estado]||'ep';
+    const aBadge=r.afiliado?`<span class="abadge">AFILIADO</span>`:'';
+    const aInfo=r.afiliado?`<br><strong>🏷️</strong> ${r.empresa} · DNI: ${r.dni}`:'';
+    const ferTag=esFeriado(r.fecha)?'<span style="font-size:.68rem;color:var(--warn)"> · 📅 Feriado</span>':'';
+    const montoCobN=Number(r.montoCobrado)||0,totalCobN=Number(r.totalCobrado)||0;
+    const ref2=r.precioTotal?fmt(r.precioTotal):'—',senaRef=r.precioSena?fmt(r.precioSena):'—',maxiRef=r.precioMaxi?fmt(r.precioMaxi):'—';
+    let pagoTag='';
+    if(totalCobN>0)pagoTag=`<span class="stag stag-ok">✅ Pagado completo: ${fmt(totalCobN)}</span>`;
+    else if(montoCobN>0){const falta=r.precioTotal?(r.precioTotal-montoCobN):null;pagoTag=`<span class="stag stag-p">⏳ Recibido: ${fmt(montoCobN)}${falta?` · Falta: ${fmt(falta)}`:''}</span>`;}
+    const segHtml=(r.estado==='confirmada'||r.estado==='realizada')?`<div class="${r.segDevuelto?'seg-row devuelto':'seg-row'}" style="margin-top:8px"><label><input type="checkbox" ${r.segDevuelto?'checked':''} onchange="toggleSeg('${r.id}',this.checked)">${r.segDevuelto?`✅ Seguro devuelto (${r.precioSeg?fmt(r.precioSeg):'—'})`:`⏳ Seguro pendiente (${r.precioSeg?fmt(r.precioSeg):'—'})`}</label></div>`:'';
+    // Maxi: solo se gestiona desde pestaña Maxi — acá solo info si está pagado
+    const maxiInfoHtml='';
+    let acts='';
+    if(r.estado==='confirmada')acts+=`<button class="ab ab-r" onclick="cambEst('${r.id}','realizada')">🎉 Marcar Realizada</button>`;
+    if(['pendiente','confirmada'].includes(r.estado))acts+=`<button class="ab ab-x" onclick="cambEst('${r.id}','cancelada')">❌ Cancelar</button>`;
+    if(r.estado==='vencida')acts+=`<button class="ab ab-g" onclick="reactivarR('${r.id}')">🔄 Reactivar</button>`;
+    acts+=`<button class="ab ab-d" onclick="elimR('${r.id}')">🗑</button>`;
+    return`<div class="rc ${eCls}" id="rc${r.id}">
+      <div class="rctop"><div><div class="rcname">${r.nombre}${aBadge}</div><div class="rccode">Código: ${r.codigo}</div>${r.nroContrato?`<div class="rccontract">📄 Contrato: #${r.nroContrato}</div>`:''}</div><span class="ebadge">${EL}</span></div>
+      <div class="rcinfo"><strong>📅</strong> ${dn} ${d}/${m}/${y}${ferTag} &nbsp;|&nbsp; <strong>🕐</strong> ${r.turnoNombre} (${r.turnoHora})<br><strong>🎉</strong> ${r.tipoEvento} &nbsp;|&nbsp; <strong>👥</strong> ${r.personas} pers. &nbsp;|&nbsp; <strong>📱</strong> ${r.tel}${aInfo}${r.consultas?`<br><strong>💬</strong> ${r.consultas}`:''}<br><strong>📋 Reservado el:</strong> <span style="color:var(--g2);font-weight:600">${r.fechaReserva||new Date(r.ts).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'})}</span>${(()=>{const dias=Math.floor((Date.now()-r.ts)/(1000*60*60*24));return dias>2?` <span style="font-size:.7rem;background:var(--warn-bg);color:var(--warn);padding:1px 6px;border-radius:10px;font-weight:700">⏰ Hace ${dias} días</span>`:dias>0?` <span style="font-size:.7rem;background:var(--g6);color:var(--g2);padding:1px 6px;border-radius:10px">Reciente (${dias}d)</span>`:' <span style="font-size:.7rem;background:var(--g6);color:var(--g2);padding:1px 6px;border-radius:10px">Hoy</span>';})()}</div>
+      <div class="conrow"><label>📄 Nro. Contrato:</label><input class="coninput" type="text" value="${r.nroContrato||''}" placeholder="Al cargar confirma la reserva..." onchange="setContrato('${r.id}',this.value)"><span style="font-size:.7rem;${r.nroContrato?'color:var(--g2)':'color:var(--muted)'}">${r.nroContrato?'✅ Confirmado':'Pendiente'}</span></div>
+      <div style="margin-bottom:9px;">
+        <div class="mg"><label style="font-size:.7rem;color:var(--muted);font-weight:600;display:block;margin-bottom:3px">📝 Fecha firma contrato</label><input type="date" class="mi" style="padding:6px 8px" value="${r.fechaContrato||''}" onchange="guardarFecha('${r.id}','fechaContrato',this.value)"></div>
+      </div>
+      <div class="msec">
+      <h5>💰 Montos — Total: ${ref2} · Seña 50%: ${senaRef}</h5>
+      <div class="mgrid">
+        ${['pendiente','vencida'].includes(r.estado)?`
+        <div class="mg cgfull"><label>Seña recibida</label><div class="miw"><span>$</span><input type="number" class="mi" value="${r.montoCobrado||''}" placeholder="0" onchange="guardarMontoCob('${r.id}',this.value)"></div><div class="mi-ref">Ref. 50%: <b>${senaRef}</b></div></div>
+        `:`
+        <div class="mg">
+          <label>Pagos parciales</label>
+          <div class="miw"><span>$</span><input type="number" class="${totalCobN>0?'mi done':'mi'}" value="${r.montoCobrado||''}" placeholder="0" ${totalCobN>0?'disabled':''} onchange="guardarMontoCob('${r.id}',this.value)"></div>
+          <div class="mi-ref">Ref 50%: <b>${senaRef}</b>${montoCobN>0&&!totalCobN?` · Falta: <b>${fmt((r.precioTotal||0)-montoCobN)}</b>`:''}</div>
+        </div>
+        <div class="mg">
+          <label style="color:var(--g1);font-weight:700">✅ Pago total</label>
+          <div class="miw"><span>$</span><input type="number" class="${totalCobN>0?'mi done':'mi'}" value="${r.totalCobrado||''}" placeholder="0" onchange="guardarTotalCob('${r.id}',this.value)"></div>
+          <div class="mi-ref">Ref: <b>${ref2}</b> — borra parciales</div>
+        </div>
+        <div class="mg cgfull">
+          <label>📅 Fecha pago total</label>
+          <input type="date" class="${r.fechaPagoTotal?'mi done':'mi'}" style="padding:6px 8px" value="${r.fechaPagoTotal||''}" onchange="guardarFecha('${r.id}','fechaPagoTotal',this.value)">
+        </div>
+        `}
+      </div>
+      ${pagoTag?`<div style="margin-top:6px">${pagoTag}</div>`:''}
+      ${segHtml}
+    </div>
+
+      <!-- HORAS EXTRA Y DOBLE TURNO -->
+      <div class="extra-sec">
+        <h6>⏱️ Horas extra y doble turno</h6>
+        ${esFinde(r.fecha)?`
+        <div class="${r.dobleTurno?'dt-row':'dt-row'}" style="${r.dobleTurno?'background:var(--blue-bg);border-color:var(--blue-b)':'background:#f8f8f8;border-color:#ddd'}">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.78rem;font-weight:600;color:${r.dobleTurno?'var(--blue)':'var(--muted)'}">
+            <input type="checkbox" ${r.dobleTurno?'checked':''} onchange="toggleDobleTurno('${r.id}',this.checked)" style="width:17px;height:17px;accent-color:var(--blue);cursor:pointer">
+            🔀 Doble turno 13:00–21:00 &nbsp;—&nbsp; Alquiler x2 + 1 solo seguro = <strong style="margin-left:4px">${fmt((r.precioBase||0)*2+(r.precioSeg||0))}</strong>
+          </label>
+        </div>`:
+        '<p style="font-size:.74rem;color:var(--muted);margin-bottom:8px">Doble turno solo disponible en fin de semana y feriados.</p>'}
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+          <div class="mg">
+            <label style="font-size:.7rem;color:var(--muted);font-weight:600;display:block;margin-bottom:3px">Cantidad de horas extra</label>
+            <input type="number" class="mi" style="padding:6px 8px" min="0" max="4" value="${r.horasExtra||0}"
+              onchange="guardarHorasExtra('${r.id}',this.value)" placeholder="0">
+            <div class="mi-ref">Valor/hora: <b>${fmt(Math.round((r.precioBase||0)/4))}</b> (alquiler ÷ 4)</div>
+          </div>
+          <div class="mg">
+            <label style="font-size:.7rem;color:var(--muted);font-weight:600;display:block;margin-bottom:3px">Costo total horas extra</label>
+            <div style="font-size:.92rem;font-weight:700;color:var(--g1);padding:6px 0">${r.horasExtra&&Number(r.horasExtra)>0?fmt(Math.round((r.precioBase||0)/4)*Number(r.horasExtra)):'$0'}</div>
+            <div class="mi-ref">Maxi cobra 50% del total: <b>${r.horasExtra&&Number(r.horasExtra)>0?fmt(Math.round(Math.round((r.precioBase||0)/4)*Number(r.horasExtra)*0.5)):'$0'}</b></div>
+          </div>
+        </div>
+
+        ${(Number(r.horasExtra)>0||r.dobleTurno||r.segDevuelto||r.maxiPagado)?`
+        <div style="margin-top:8px;background:var(--g1);border-radius:7px;padding:8px 12px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="color:var(--g4);font-size:.78rem;font-weight:600">Total ajustado del evento</span>
+            <span style="color:var(--g5);font-size:.95rem;font-weight:700">${fmt(
+              (r.dobleTurno?(r.precioBase||0)*2+(r.precioSeg||0):(r.precioTotal||0)) +
+              Math.round((r.precioBase||0)/4)*Number(r.horasExtra||0) -
+              (r.segDevuelto?(r.precioSeg||0):0) -
+              (r.maxiPagado?(Math.round((r.precioBase||0)*0.3)+Math.round((r.costoExtra||0)*0.5)):0)
+            )}</span>
+          </div>
+          ${r.segDevuelto||r.maxiPagado?`<div style="font-size:.68rem;color:var(--g4);margin-top:4px;line-height:1.6">${r.segDevuelto?`<span>✅ Seguro devuelto: -${fmt(r.precioSeg||0)}</span><br>`:''}${r.maxiPagado?`<span>✅ Maxi pagado: -${fmt(Math.round((r.precioBase||0)*0.3)+Math.round((r.costoExtra||0)*0.5))}</span>`:''}` :''}
+        </div>`:''}
+      </div>
+      ${maxiInfoHtml}${cd}<div class="rcacts">${acts}</div>
+    </div>`;
+  }).join('');
+}
+
+window.mostrarFichaAdmin=function(id, silent){
+  // Registrar ficha activa
+  fichaActivaId=id;
+  // Marcar item activo en el acordeón
+  document.querySelectorAll('.mes-nav-item').forEach(el=>el.style.background='');
+  const activeItem=document.querySelector(`.mes-nav-item[onclick*="'${id}'"]`);
+  if(activeItem)activeItem.style.background='var(--g5)';
+  // Renderizar solo esa ficha
+  const r=DB.reservas[id]; if(!r)return;
+  const list=document.getElementById('resList');
+  list.dataset.loaded='1';
+  // Reusar la lógica de renderAdmin para una sola reserva
+  const DIAS3=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const[y,m,d]=r.fecha.split('-'),dn=DIAS3[new Date(r.fecha+'T12:00:00').getDay()];
+  let cd='';
+  if(r.estado==='pendiente'){const rem=(r.ts+48*3600*1000)-Date.now();if(rem>0){const h=Math.floor(rem/3600000),mn=Math.floor((rem%3600000)/60000);cd=`<div class="rccd">⏳ Vence en ${h}h ${mn}m</div>`;}}
+  const EL={pendiente:'Pendiente',confirmada:'Confirmada',cancelada:'Cancelada',vencida:'Vencida',realizada:'Realizada'}[r.estado]||r.estado;
+  const eCls={pendiente:'ep',confirmada:'ec',cancelada:'ex',vencida:'ev',realizada:'er'}[r.estado]||'ep';
+  const aBadge=r.afiliado?`<span class="abadge">AFILIADO</span>`:'';
+  const aInfo=r.afiliado?`<br><strong>🏷️</strong> ${r.empresa} · DNI: ${r.dni}`:'';
+  const ferTag=esFeriado(r.fecha)?'<span style="font-size:.68rem;color:var(--warn)"> · 📅 Feriado</span>':'';
+  const montoCobN=Number(r.montoCobrado)||0,totalCobN=Number(r.totalCobrado)||0;
+  const ref2=r.precioTotal?fmt(r.precioTotal):'—',senaRef=r.precioSena?fmt(r.precioSena):'—',maxiRef=r.precioMaxi?fmt(r.precioMaxi):'—';
+  let pagoTag='';
+  if(totalCobN>0)pagoTag=`<span class="stag stag-ok">✅ Pagado completo: ${fmt(totalCobN)}</span>`;
+  else if(montoCobN>0){const falta=r.precioTotal?(r.precioTotal-montoCobN):null;pagoTag=`<span class="stag stag-p">⏳ Recibido: ${fmt(montoCobN)}${falta?` · Falta: ${fmt(falta)}`:''}</span>`;}
+  const segHtml=(r.estado==='confirmada'||r.estado==='realizada')?`<div class="${r.segDevuelto?'seg-row devuelto':'seg-row'}" style="margin-top:8px"><label><input type="checkbox" ${r.segDevuelto?'checked':''} onchange="toggleSeg('${r.id}',this.checked)">${r.segDevuelto?`✅ Seguro devuelto (${r.precioSeg?fmt(r.precioSeg):'—'})`:`⏳ Seguro pendiente (${r.precioSeg?fmt(r.precioSeg):'—'})`}</label></div>`:'';
+  const maxiInfoHtml2='';
+  let acts='';
+  if(r.estado==='confirmada')acts+=`<button class="ab ab-r" onclick="cambEst('${r.id}','realizada')">🎉 Marcar Realizada</button>`;
+  if(['pendiente','confirmada'].includes(r.estado))acts+=`<button class="ab ab-x" onclick="cambEst('${r.id}','cancelada')">❌ Cancelar</button>`;
+  if(r.estado==='vencida')acts+=`<button class="ab ab-g" onclick="reactivarR('${r.id}')">🔄 Reactivar</button>`;
+  acts+=`<button class="ab ab-d" onclick="elimR('${r.id}')">🗑</button>`;
+  list.innerHTML=`<div class="rc ${eCls}" id="rc${r.id}">
+    <div class="rctop"><div><div class="rcname">${r.nombre}${aBadge}</div><div class="rccode">Código: ${r.codigo}</div>${r.nroContrato?`<div class="rccontract">📄 Contrato: #${r.nroContrato}</div>`:''}</div><span class="ebadge">${EL}</span></div>
+    <div class="rcinfo"><strong>📅</strong> ${dn} ${d}/${m}/${y}${ferTag} &nbsp;|&nbsp; <strong>🕐</strong> ${r.turnoNombre} (${r.turnoHora})<br><strong>🎉</strong> ${r.tipoEvento} &nbsp;|&nbsp; <strong>👥</strong> ${r.personas} pers. &nbsp;|&nbsp; <strong>📱</strong> ${r.tel}${aInfo}${r.consultas?`<br><strong>💬</strong> ${r.consultas}`:''}<br><strong>📋 Reservado el:</strong> <span style="color:var(--g2);font-weight:600">${r.fechaReserva||new Date(r.ts).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'})}</span>${(()=>{const dias=Math.floor((Date.now()-r.ts)/(1000*60*60*24));return dias>2?` <span style="font-size:.7rem;background:var(--warn-bg);color:var(--warn);padding:1px 6px;border-radius:10px;font-weight:700">⏰ Hace ${dias} días</span>`:dias>0?` <span style="font-size:.7rem;background:var(--g6);color:var(--g2);padding:1px 6px;border-radius:10px">Reciente (${dias}d)</span>`:' <span style="font-size:.7rem;background:var(--g6);color:var(--g2);padding:1px 6px;border-radius:10px">Hoy</span>';})()}</div>
+    <div class="conrow"><label>📄 Nro. Contrato:</label><input class="coninput" type="text" value="${r.nroContrato||''}" placeholder="Al cargar confirma la reserva..." onchange="setContrato('${r.id}',this.value)"><span style="font-size:.7rem;${r.nroContrato?'color:var(--g2)':'color:var(--muted)'}">${r.nroContrato?'✅ Confirmado':'Pendiente'}</span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:9px;">
+      <div class="mg"><label style="font-size:.7rem;color:var(--muted);font-weight:600;display:block;margin-bottom:3px">📝 Fecha confección contrato</label><input type="date" class="mi" style="padding:6px 8px" value="${r.fechaContrato||''}" onchange="guardarFecha('${r.id}','fechaContrato',this.value)"></div>
+      <div class="mg"><label style="font-size:.7rem;color:var(--muted);font-weight:600;display:block;margin-bottom:3px">💳 Fecha pago total</label><input type="date" class="${r.fechaPagoTotal?'mi done':'mi'}" style="padding:6px 8px" value="${r.fechaPagoTotal||''}" onchange="guardarFecha('${r.id}','fechaPagoTotal',this.value)"></div>
+    </div>
+    <div class="msec">
+      <h5>💰 Montos — Total: ${ref2} · Seña 50%: ${senaRef}</h5>
+      <div class="mgrid">
+        ${['pendiente','vencida'].includes(r.estado)?`
+        <div class="mg cgfull"><label>Seña recibida</label><div class="miw"><span>$</span><input type="number" class="mi" value="${r.montoCobrado||''}" placeholder="0" onchange="guardarMontoCob('${r.id}',this.value)"></div><div class="mi-ref">Ref. 50%: <b>${senaRef}</b></div></div>
+        `:`
+        <div class="mg">
+          <label>Pagos parciales</label>
+          <div class="miw"><span>$</span><input type="number" class="${totalCobN>0?'mi done':'mi'}" value="${r.montoCobrado||''}" placeholder="0" ${totalCobN>0?'disabled':''} onchange="guardarMontoCob('${r.id}',this.value)"></div>
+          <div class="mi-ref">Ref 50%: <b>${senaRef}</b>${montoCobN>0&&!totalCobN?` · Falta: <b>${fmt((r.precioTotal||0)-montoCobN)}</b>`:''}</div>
+        </div>
+        <div class="mg">
+          <label style="color:var(--g1);font-weight:700">✅ Pago total</label>
+          <div class="miw"><span>$</span><input type="number" class="${totalCobN>0?'mi done':'mi'}" value="${r.totalCobrado||''}" placeholder="0" onchange="guardarTotalCob('${r.id}',this.value)"></div>
+          <div class="mi-ref">Ref: <b>${ref2}</b> — borra parciales</div>
+        </div>
+        <div class="mg cgfull">
+          <label>📅 Fecha pago total</label>
+          <input type="date" class="${r.fechaPagoTotal?'mi done':'mi'}" style="padding:6px 8px" value="${r.fechaPagoTotal||''}" onchange="guardarFecha('${r.id}','fechaPagoTotal',this.value)">
+        </div>
+        `}
+      </div>
+      ${pagoTag?`<div style="margin-top:6px">${pagoTag}</div>`:''}
+      ${segHtml}
+    </div>
+    <div class="extra-sec">
+      <h6>⏱️ Horas extra y doble turno</h6>
+      ${esFinde(r.fecha)?`
+      <div class="${r.dobleTurno?'dt-row':'dt-row'}" style="${r.dobleTurno?'background:var(--blue-bg);border-color:var(--blue-b)':'background:#f8f8f8;border-color:#ddd'}">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.78rem;font-weight:600;color:${r.dobleTurno?'var(--blue)':'var(--muted)'}">
+          <input type="checkbox" ${r.dobleTurno?'checked':''} onchange="toggleDobleTurno('${r.id}',this.checked)" style="width:17px;height:17px;accent-color:var(--blue);cursor:pointer">
+          🔀 Doble turno 13:00–21:00 &nbsp;—&nbsp; Alquiler x2 + 1 solo seguro = <strong style="margin-left:4px">${fmt((r.precioBase||0)*2+(r.precioSeg||0))}</strong>
+        </label>
+      </div>`:
+      '<p style="font-size:.74rem;color:var(--muted);margin-bottom:8px">Doble turno solo disponible en fin de semana y feriados.</p>'}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+        <div class="mg">
+          <label style="font-size:.7rem;color:var(--muted);font-weight:600;display:block;margin-bottom:3px">Cantidad de horas extra</label>
+          <input type="number" class="mi" style="padding:6px 8px" min="0" max="4" value="${r.horasExtra||0}" onchange="guardarHorasExtra('${r.id}',this.value)" placeholder="0">
+          <div class="mi-ref">Valor/hora: <b>${fmt(Math.round((r.precioBase||0)/4))}</b> (alquiler ÷ 4)</div>
+        </div>
+        <div class="mg">
+          <label style="font-size:.7rem;color:var(--muted);font-weight:600;display:block;margin-bottom:3px">Costo total horas extra</label>
+          <div style="font-size:.92rem;font-weight:700;color:var(--g1);padding:6px 0">${r.horasExtra&&Number(r.horasExtra)>0?fmt(Math.round((r.precioBase||0)/4)*Number(r.horasExtra)):'$0'}</div>
+          <div class="mi-ref">Maxi cobra 50% del total: <b>${r.horasExtra&&Number(r.horasExtra)>0?fmt(Math.round(Math.round((r.precioBase||0)/4)*Number(r.horasExtra)*0.5)):'$0'}</b></div>
+        </div>
+      </div>
+      ${(Number(r.horasExtra)>0||r.dobleTurno||r.segDevuelto||r.maxiPagado)?`
+      <div style="margin-top:8px;background:var(--g1);border-radius:7px;padding:8px 12px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="color:var(--g4);font-size:.78rem;font-weight:600">Total ajustado del evento</span>
+          <span style="color:var(--g5);font-size:.95rem;font-weight:700">${fmt(
+            (r.dobleTurno?(r.precioBase||0)*2+(r.precioSeg||0):(r.precioTotal||0)) +
+            Math.round((r.precioBase||0)/4)*Number(r.horasExtra||0) -
+            (r.segDevuelto?(r.precioSeg||0):0) -
+            (r.maxiPagado?(Math.round((r.precioBase||0)*0.3)+Math.round((r.costoExtra||0)*0.5)):0)
+          )}</span>
+        </div>
+        ${r.segDevuelto||r.maxiPagado?`<div style="font-size:.68rem;color:var(--g4);margin-top:4px;line-height:1.6">${r.segDevuelto?`<span>✅ Seguro devuelto: -${fmt(r.precioSeg||0)}</span><br>`:''}${r.maxiPagado?`<span>✅ Maxi pagado: -${fmt(Math.round((r.precioBase||0)*0.3)+Math.round((r.costoExtra||0)*0.5))}</span>`:''}` :''}
+      </div>`:''}
+    </div>
+    ${maxiInfoHtml2}${cd}<div class="rcacts">${acts}</div>
+  </div>`;
+  if(!silent)list.scrollIntoView({behavior:'smooth',block:'start'});
+};
+
+window.setContrato=async(id,val)=>{
+  const fk=Object.keys(DB.reservas).find(k=>k===id||(DB.reservas[k].id===id));
+  if(!fk)return;
+  const r=DB.reservas[fk];
+  const upd={[`reservas/${fk}/nroContrato`]:val.trim()};
+  if(val.trim()&&r&&['pendiente','vencida'].includes(r.estado))upd[`reservas/${fk}/estado`]='confirmada';
+  if(!val.trim()&&r&&r.estado==='confirmada')upd[`reservas/${fk}/estado`]='pendiente';
+  await update(ref(db),upd);
+  if(val.trim())showToast('✅ Contrato #'+val.trim()+' — Reserva confirmada');
+  else showToast('⚠️ Nro. de contrato borrado');
+};
+window.guardarFecha=async(id,campo,val)=>{
+  const fk=Object.keys(DB.reservas).find(k=>k===id||(DB.reservas[k].id===id));
+  if(!fk)return;
+  await update(ref(db,`reservas/${fk}`),{[campo]:val});
+};
+window.guardarHorasExtra=async(id,val)=>{
+  const hs=Math.max(0,parseInt(val)||0);
+  const fk=Object.keys(DB.reservas).find(k=>k===id||(DB.reservas[k].id===id));
+  if(!fk)return;
+  const r=DB.reservas[fk]; if(!r)return;
+  id=fk;
+  const valorHora=Math.round((r.precioBase||0)/4);
+  const costoExtra=valorHora*hs;
+  const maxiExtra=Math.round(costoExtra*0.5);
+  const upd={horasExtra:hs,costoExtra,maxiExtra};
+  // Si ya tiene total cobrado, actualizarlo sumando la hora extra al precio base + seguro
+  if(Number(r.totalCobrado)>0){
+    const baseTotal=(r.precioBase||0)+(r.precioSeg||0);
+    upd.totalCobrado=baseTotal+costoExtra;
+    showToast(`✅ Total cobrado actualizado a ${new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(upd.totalCobrado)}`);
+  }
+  await update(ref(db,`reservas/${fk}`),upd);
+};
+window.toggleDobleTurno=async(id,val)=>{
+  const fk=Object.keys(DB.reservas).find(k=>k===id||(DB.reservas[k].id===id));
+  if(!fk)return;
+  const r=DB.reservas[fk]; if(!r)return;
+  id=fk;
+  const precioDoble=val?((r.precioBase||0)*2+(r.precioSeg||0)):(r.precioTotal||0);
+  const maxiDoble=val?Math.round((r.precioBase||0)*2*0.3):(r.precioMaxi||0);
+  await update(ref(db,`reservas/${id}`),{dobleTurno:val,precioTotalAjustado:precioDoble,precioMaxiAjustado:maxiDoble});
+};
+window.guardarMontoCob=async(id,val)=>{
+  const fk=Object.keys(DB.reservas).find(k=>k===id||(DB.reservas[k].id===id));
+  if(!fk)return;
+  await update(ref(db,`reservas/${fk}`),{montoCobrado:val?Number(val):''});
+};
+window.guardarTotalCob=async(id,val)=>{
+  const fk=Object.keys(DB.reservas).find(k=>k===id||(DB.reservas[k].id===id));
+  if(!fk)return;
+  const upd={totalCobrado:val?Number(val):''};
+  if(val&&Number(val)>0)upd.montoCobrado='';
+  await update(ref(db,`reservas/${fk}`),upd);
+};
+window.toggleSeg=async(id,val)=>{
+  const firebaseKey=Object.keys(DB.reservas).find(k=>k===id||(DB.reservas[k].id===id));
+  if(!firebaseKey)return;
+  await update(ref(db,`reservas/${firebaseKey}`),{segDevuelto:val});
+};
+window.toggleMaxi=async(id)=>{
+  // id puede ser el campo r.id o directamente la firebase key
+  const firebaseKey=Object.keys(DB.reservas).find(k=>k===id||(DB.reservas[k].id===id));
+  if(!firebaseKey)return;
+  const r=DB.reservas[firebaseKey];
+  const pagado=!r.maxiPagado;
+  await update(ref(db,`reservas/${firebaseKey}`),{maxiPagado:pagado,fechaMaxiPago:pagado?new Date().toLocaleDateString('es-AR'):''});
+};
+window.cambEst=async(id,est)=>{
+  const fk=Object.keys(DB.reservas).find(k=>k===id||(DB.reservas[k].id===id));
+  if(!fk)return;
+  await update(ref(db,`reservas/${fk}`),{estado:est});
+};
+window.reactivarR=async(id)=>{
+  const fk=Object.keys(DB.reservas).find(k=>k===id||(DB.reservas[k].id===id));
+  if(!fk)return;
+  await update(ref(db,`reservas/${fk}`),{estado:'pendiente',ts:Date.now()});
+  showToast('🔄 Reserva reactivada — 2 días hábiles para confirmar');
+};
+window.elimR=async(id)=>{
+  if(!confirm('¿Eliminar esta reserva?'))return;
+  const fk=Object.keys(DB.reservas).find(k=>k===id||(DB.reservas[k].id===id));
+  if(!fk)return;
+  await dbRemove(`reservas/${fk}`);
+};
+
+// ── ESTADÍSTICAS ──
+function renderStats(){
+  const res=getR().filter(r=>!['cancelada','vencida'].includes(r.estado));
+  const anio=new Date().getFullYear();
+  const MS=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const calcMaxi=r=>Math.round((Number(r.precioBase)||0)*0.3)+Math.round((Number(r.costoExtra)||0)*0.5);
+
+  // ── CAJA ──
+  // Señas de fiestas aún NO pagadas completo y NO realizadas = lo que tenés físicamente
+  const senasEnCaja=res.filter(r=>r.estado!=='realizada'&&!(Number(r.totalCobrado)>0))
+    .reduce((s,r)=>s+(Number(r.montoCobrado)||0),0);
+  // Seguros pendientes de devolver (también están en caja)
+  const segurosEnCaja=res.filter(r=>!r.segDevuelto&&(r.estado==='confirmada'||r.estado==='realizada'))
+    .reduce((s,r)=>s+(Number(r.precioSeg)||0),0);
+  const cajaTotal=senasEnCaja+segurosEnCaja;
+
+  // ── TOTAL NETO DISPONIBLE (basado en lo realmente cobrado) ──
+  // Si pagó total → totalCobrado − seguro − maxi
+  // Si solo pagó seña/parcial → montoCobrado (sin descontar, es plata en mano)
+  // Si no cobró nada → $0
+  const totalNeto=res.reduce((s,r)=>{
+    const totalCob=Number(r.totalCobrado)||0;
+    const parcial=Number(r.montoCobrado)||0;
+    if(totalCob>0) return s+totalCob-(Number(r.precioSeg)||0)-calcMaxi(r);
+    if(parcial>0) return s+parcial;
+    return s;
+  },0);
+  // vars de detalle (para cuadros de desglose)
+  const totalAlquiler=res.reduce((s,r)=>s+(Number(r.precioBase)||0),0);
+  const totalExtras=res.reduce((s,r)=>s+(Number(r.costoExtra)||0),0);
+  const totalSegsAll=res.reduce((s,r)=>s+(Number(r.precioSeg)||0),0);
+  const totalMaxiTodo=res.reduce((s,r)=>s+calcMaxi(r),0);
+  const totalBruto=res.reduce((s,r)=>s+(Number(r.precioTotal)||0)+(Number(r.costoExtra)||0),0);
+  const totalSegDev=res.filter(r=>r.segDevuelto).reduce((s,r)=>s+(Number(r.precioSeg)||0),0);
+  const totalMaxiPag=res.filter(r=>r.maxiPagado).reduce((s,r)=>s+calcMaxi(r),0);
+
+  // ── SEGUROS ──
+  const totalSegs=res.filter(r=>r.precioSeg&&(r.estado==='confirmada'||r.estado==='realizada')).length;
+  const segsDevueltos=res.filter(r=>r.segDevuelto).length;
+  const segsActivos=totalSegs-segsDevueltos;
+  const montoSegsActivos=res.filter(r=>!r.segDevuelto&&(r.estado==='confirmada'||r.estado==='realizada'))
+    .reduce((s,r)=>s+(Number(r.precioSeg)||0),0);
+
+  // ── MAXI ──
+  const totalAMaxi=res.reduce((s,r)=>s+calcMaxi(r),0);
+  const maxiPagado=res.filter(r=>r.maxiPagado).reduce((s,r)=>s+calcMaxi(r),0);
+  const maxiPendiente=totalAMaxi-maxiPagado;
+  const hoy=new Date(); hoy.setHours(0,0,0,0);
+  const lunes=new Date(hoy); lunes.setDate(hoy.getDate()+(hoy.getDay()===0?1:8-hoy.getDay()));
+  const domingo=new Date(lunes); domingo.setDate(lunes.getDate()+6);
+  const maxiProxSem=res.filter(r=>!r.maxiPagado&&['confirmada','realizada'].includes(r.estado)).reduce((s,r)=>{
+    const d=new Date(r.fecha+'T12:00:00'); d.setHours(0,0,0,0);
+    return d>=lunes&&d<=domingo?s+calcMaxi(r):s;
+  },0);
+  const lStr=lunes.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'});
+  const dStr=domingo.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'});
+
+  // ── INGRESOS POR MES (neto real: sin seguros devueltos, sin maxi pagado) ──
+  const meses=Array(12).fill(0).map((_,i)=>({i,neto:0,afil:0,part:0}));
+  res.forEach(r=>{
+    const dobj=new Date(r.fecha+'T12:00:00');
+    if(dobj.getFullYear()===anio){
+      const mi=dobj.getMonth();
+      const base=Number(r.precioBase)||0;
+      const extra=Number(r.costoExtra)||0;
+      const seg=Number(r.precioSeg)||0;
+      const maxi=calcMaxi(r);
+      // Neto real por mes: basado en lo cobrado
+      const _tc=Number(r.totalCobrado)||0;
+      const _mc=Number(r.montoCobrado)||0;
+      if(_tc>0) meses[mi].neto+=_tc-seg-maxi;
+      else if(_mc>0) meses[mi].neto+=_mc;
+      r.afiliado?meses[mi].afil++:meses[mi].part++;
+    }
+  });
+  const maxNeto=Math.max(...meses.map(m=>m.neto),1);
+
+  // ── TIPOS DE EVENTO ──
+  const tipos={};
+  res.forEach(r=>{if(r.tipoEvento)tipos[r.tipoEvento]=(tipos[r.tipoEvento]||0)+1;});
+  const nAfil=res.filter(r=>r.afiliado).length;
+  const nPart=res.filter(r=>!r.afiliado).length;
+  const tot=nAfil+nPart||1;
+
+  document.getElementById('statsContent').innerHTML=`
+
+    <div class="s-divider">💰 Dinero</div>
+
+    <div class="s-hero verde">
+      <div class="s-hero-lbl">En caja ahora</div>
+      <div class="s-hero-val">${fmt(cajaTotal)}</div>
+      <div class="s-hero-sub">Señas recibidas + seguros pendientes de devolución</div>
+    </div>
+
+    <div class="s2cards">
+      <div class="s2card">
+        <div class="s2lbl">Señas recibidas</div>
+        <div class="s2val">${fmt(senasEnCaja)}</div>
+        <div class="s2sub">Reservas sin pago total aún</div>
+      </div>
+      <div class="s2card warn">
+        <div class="s2lbl">🛡️ Seguros en caja</div>
+        <div class="s2val warn">${fmt(segurosEnCaja)}</div>
+        <div class="s2sub">Pendientes de devolución</div>
+      </div>
+    </div>
+
+    <div class="s-hero oro" style="margin-top:4px">
+      <div class="s-hero-lbl">💵 Lo que podés gastar</div>
+      <div class="s-hero-val">${fmt(totalNeto)}</div>
+      <div class="s-hero-sub">Basado en lo cobrado: total pagado − seg − Maxi / solo seña → seña completa</div>
+    </div>
+
+    <div class="desglose-wrap">
+      <div class="desglose-title" onclick="toggleDesglose()">
+        🔍 Ver desglose por reserva <span id="desgloseArrow">›</span>
+      </div>
+      <div id="desgloseDetalle" style="display:none">
+        <div class="desglose-sub">Con pago total registrado</div>
+        ${(()=>{
+          const conTot=res.filter(r=>Number(r.totalCobrado)>0).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+          if(!conTot.length) return '<p style="color:var(--muted);font-size:.8rem;padding:8px 0">Sin reservas con pago total</p>';
+          const DIAS2=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+          return conTot.map(r=>{
+            const [ry,rm,rd]=r.fecha.split('-');
+            const dn=DIAS2[new Date(r.fecha+'T12:00:00').getDay()];
+            const tc=Number(r.totalCobrado)||0;
+            const seg=Number(r.precioSeg)||0;
+            const maxi=calcMaxi(r);
+            const neto=tc-seg-maxi;
+            return `<div class="desglose-row">
+              <div class="desglose-nombre">${r.nombre} <span style="color:var(--muted);font-size:.7rem;font-family:monospace">${r.codigo||''}</span></div>
+              <div class="desglose-fecha">${dn} ${rd}/${rm}/${ry} · ${r.turnoNombre}</div>
+              <div class="desglose-calculo">
+                <span class="dc-item">${fmt(tc)} cobrado</span>
+                <span class="dc-sep">−</span>
+                <span class="dc-item warn">${fmt(seg)} seg</span>
+                <span class="dc-sep">−</span>
+                <span class="dc-item warn">${fmt(maxi)} Maxi</span>
+                <span class="dc-sep">=</span>
+                <span class="dc-neto">${fmt(neto)}</span>
+              </div>
+            </div>`;
+          }).join('') + `<div class="desglose-total">Total con pago completo: <strong>${fmt(conTot.reduce((s,r)=>s+Number(r.totalCobrado)-(Number(r.precioSeg)||0)-calcMaxi(r),0))}</strong></div>`;
+        })()}
+        <div class="desglose-sub" style="margin-top:12px">Solo seña/parcial</div>
+        ${(()=>{
+          const soloS=res.filter(r=>!(Number(r.totalCobrado)>0)&&Number(r.montoCobrado)>0).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+          if(!soloS.length) return '<p style="color:var(--muted);font-size:.8rem;padding:8px 0">Sin reservas con solo seña</p>';
+          const DIAS2=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+          return soloS.map(r=>{
+            const [ry,rm,rd]=r.fecha.split('-');
+            const dn=DIAS2[new Date(r.fecha+'T12:00:00').getDay()];
+            const mc=Number(r.montoCobrado)||0;
+            return `<div class="desglose-row">
+              <div class="desglose-nombre">${r.nombre} <span style="color:var(--muted);font-size:.7rem;font-family:monospace">${r.codigo||''}</span></div>
+              <div class="desglose-fecha">${dn} ${rd}/${rm}/${ry} · ${r.turnoNombre}</div>
+              <div class="desglose-calculo">
+                <span class="dc-item">${fmt(mc)} seña</span>
+                <span class="dc-sep">=</span>
+                <span class="dc-neto">${fmt(mc)}</span>
+              </div>
+            </div>`;
+          }).join('') + `<div class="desglose-total">Total señas: <strong>${fmt(soloS.reduce((s,r)=>s+Number(r.montoCobrado),0))}</strong></div>`;
+        })()}
+      </div>
+    </div>
+
+    ${(()=>{
+      const conTotal=res.filter(r=>Number(r.totalCobrado)>0);
+      const soloSena=res.filter(r=>!(Number(r.totalCobrado)>0)&&Number(r.montoCobrado)>0);
+      const sinCobrar=res.filter(r=>!(Number(r.totalCobrado)>0)&&!(Number(r.montoCobrado)>0));
+      const montoConTotal=conTotal.reduce((s,r)=>s+Number(r.totalCobrado)-(Number(r.precioSeg)||0)-calcMaxi(r),0);
+      const montoSoloSena=soloSena.reduce((s,r)=>s+Number(r.montoCobrado),0);
+      return `<div class="s2cards">
+        <div class="s2card">
+          <div class="s2lbl">✅ Con pago total</div>
+          <div class="s2val green">${fmt(montoConTotal)}</div>
+          <div class="s2sub">${conTotal.length} reserva${conTotal.length!==1?'s':''} · cobrado − seg − Maxi</div>
+        </div>
+        <div class="s2card warn">
+          <div class="s2lbl">⏳ Solo seña/parcial</div>
+          <div class="s2val warn">${fmt(montoSoloSena)}</div>
+          <div class="s2sub">${soloSena.length} reserva${soloSena.length!==1?'s':''} · monto recibido</div>
+        </div>
+        <div class="s2card" style="background:#f5f5f5">
+          <div class="s2lbl">🕐 Sin cobrar aún</div>
+          <div class="s2val" style="color:#aaa">${fmt(0)}</div>
+          <div class="s2sub">${sinCobrar.length} reserva${sinCobrar.length!==1?'s':''} · no suma</div>
+        </div>
+      </div>`;
+    })()}
+
+    <div class="s-divider" style="margin-top:14px">🛡️ Coseguros</div>
+
+    <div class="s2cards">
+      <div class="s2card ${segsActivos>0?'warn':''}">
+        <div class="s2lbl">Coseguros activos para entregar</div>
+        <div class="s2val ${segsActivos>0?'warn':''}">${segsActivos} reserva${segsActivos!==1?'s':''}</div>
+        <div class="s2sub">${fmt(montoSegsActivos)} retenidos</div>
+      </div>
+      <div class="s2card">
+        <div class="s2lbl">✅ Ya devueltos</div>
+        <div class="s2val green">${segsDevueltos} reserva${segsDevueltos!==1?'s':''}</div>
+        <div class="s2sub">${fmt(totalSegDev)} liberados</div>
+      </div>
+    </div>
+
+    <div class="s-divider" style="margin-top:14px">👷 Maxi</div>
+
+    ${maxiProxSem>0?`<div style="background:var(--warn-bg);border:1.5px solid var(--gold-l);border-radius:9px;padding:11px 14px;margin-bottom:10px;font-size:.82rem;color:var(--warn);font-weight:600;display:flex;align-items:center;gap:8px">⚠️ <span>Próxima semana (${lStr}–${dStr}): pagar <strong>${fmt(maxiProxSem)}</strong></span></div>`:''}
+
+    <div class="s2cards">
+      <div class="s2card">
+        <div class="s2lbl">Total acumulado a pagar</div>
+        <div class="s2val">${fmt(totalAMaxi)}</div>
+      </div>
+      <div class="s2card">
+        <div class="s2lbl">✅ Ya pagado</div>
+        <div class="s2val green">${fmt(maxiPagado)}</div>
+      </div>
+      <div class="s2card ${maxiPendiente>0?'warn':''}">
+        <div class="s2lbl">⏳ Pendiente</div>
+        <div class="s2val ${maxiPendiente>0?'warn':''}">${fmt(maxiPendiente)}</div>
+      </div>
+      <div class="s2card blue">
+        <div class="s2lbl">📅 Próx. semana</div>
+        <div class="s2val blue">${fmt(maxiProxSem)}</div>
+        <div class="s2sub">${lStr} al ${dStr}</div>
+      </div>
+    </div>
+
+    <div class="s-divider" style="margin-top:14px">📊 Ingresos por mes — ${anio}</div>
+
+    <div class="sbar-wrap">
+      <h4>Lo que queda limpio por mes</h4>
+      ${meses.map(m=>{
+        const pct=m.neto>0?Math.max(m.neto/maxNeto*100,3):0;
+        return `<div class="sbarrow">
+          <div class="sbl">${MS[m.i]}</div>
+          <div class="sbo">
+            <div class="sbfill verde" style="width:${pct}%">
+              ${m.neto>0?`<span class="sbval">${fmt(m.neto)}</span>`:''}
+            </div>
+          </div>
+          ${m.afil+m.part>0?`<span style="font-size:.65rem;color:var(--muted);white-space:nowrap;width:28px;text-align:right">${m.afil+m.part}🎉</span>`:'<span style="width:28px"></span>'}
+        </div>`;
+      }).join('')}
+      <p class="sbnote">Lo cobrado: si pagó total → cobrado − seg − Maxi. Si solo seña → seña completa. Sin cobrar → $0.</p>
+    </div>
+
+    <div class="s-divider" style="margin-top:6px">🎉 Fiestas</div>
+
+    <div class="s2cards" style="margin-bottom:10px">
+      <div class="s2card">
+        <div class="s2lbl">👤 Particulares</div>
+        <div class="s2val">${nPart}</div>
+        <div class="s2sub">${Math.round(nPart/tot*100)}% del total</div>
+      </div>
+      <div class="s2card blue">
+        <div class="s2lbl">🏷️ Afiliados</div>
+        <div class="s2val blue">${nAfil}</div>
+        <div class="s2sub">${Math.round(nAfil/tot*100)}% del total</div>
+      </div>
+    </div>
+
+    <div class="tipogrid2">
+      ${Object.entries(tipos).sort((a,b)=>b[1]-a[1]).map(([t,n])=>`
+        <div class="tipoc2">
+          <div><div class="tipoc2-n">${n}</div><div class="tipoc2-l">${t}</div></div>
+          <div style="font-size:.68rem;color:var(--muted)">${Math.round(n/tot*100)}%</div>
+        </div>`).join('')||'<p style="color:var(--muted);font-size:.82rem;grid-column:1/-1;padding:12px 0">Sin datos aún</p>'}
+    </div>`;
+}
+// ── MAXI ──
+function renderMaxi(){
+  const res=getR().filter(r=>['confirmada','realizada'].includes(r.estado));
+  const anio=new Date().getFullYear();
+  const MS=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const meses=Array(12).fill(0).map((_,i)=>({i,total:0,pagado:0,pend:0,fiestas:[]}));
+  res.forEach(r=>{
+    const dobj=new Date(r.fecha+'T12:00:00');
+    if(dobj.getFullYear()===anio){
+      const mi=dobj.getMonth();
+      const base=Number(r.precioBase)||0;
+      const extra=Number(r.costoExtra)||0;
+      // 30% del alquiler + 50% de horas extra
+      const val=Math.round(base*0.3)+Math.round(extra*0.5);
+      meses[mi].total+=val;
+      r.maxiPagado?meses[mi].pagado+=val:meses[mi].pend+=val;
+      meses[mi].fiestas.push({
+        id:r.id,nombre:r.nombre,fecha:r.fecha,code:r.codigo,
+        val,pagado:r.maxiPagado,fechaPago:r.fechaMaxiPago||'',
+        estado:r.estado,extra,turno:r.turnoNombre
+      });
+    }
+  });
+  const totT=meses.reduce((s,m)=>s+m.total,0),totP=meses.reduce((s,m)=>s+m.pagado,0),totPend=meses.reduce((s,m)=>s+m.pend,0);
+  const nReal=res.filter(r=>r.estado==='realizada'&&new Date(r.fecha+'T12:00:00').getFullYear()===anio).length;
+  document.getElementById('maxiContent').innerHTML=`
+    <div class="mxcards">
+      <div class="fc"><div class="fclbl">💰 Total a pagar ${anio}</div><div class="fcval">${fmt(totT)}</div></div>
+      <div class="fc"><div class="fclbl">✅ Ya pagado</div><div class="fcval green">${fmt(totP)}</div></div>
+      <div class="fc"><div class="fclbl">⏳ Pendiente total</div><div class="fcval warn">${fmt(totPend)}</div></div>
+      <div class="fc"><div class="fclbl">🎉 Fiestas realizadas ${anio}</div><div class="fcval">${nReal}</div></div>
+    </div>
+    ${meses.filter(m=>m.fiestas.length).map(m=>`
+      <div class="cbox">
+        <h4>${MS[m.i]} &nbsp;<span style="font-size:.75rem;font-family:'DM Sans';color:var(--g2)">✅ ${fmt(m.pagado)}</span> &nbsp;<span style="font-size:.75rem;color:var(--warn)">⏳ ${fmt(m.pend)}</span></h4>
+        ${m.fiestas.map(f=>`
+          <div class="firow">
+            <div>
+              <div class="fi-name">${f.nombre} <span style="color:var(--muted);font-size:.7rem">${f.code}</span> ${f.estado==='confirmada'?'<span style="font-size:.68rem;background:var(--warn-bg);color:var(--warn);padding:1px 6px;border-radius:10px">Próxima</span>':'<span style="font-size:.68rem;background:var(--g6);color:var(--g2);padding:1px 6px;border-radius:10px">Realizada</span>'}</div>
+              <div class="fi-date">${f.fecha.split('-').reverse().join('/')} · ${f.turno}${f.extra>0?` · Horas extra: ${fmt(f.extra)} (Maxi 50%: ${fmt(Math.round(f.extra*0.5))})`:''}${f.pagado&&f.fechaPago?' · Pagado: '+f.fechaPago:''}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="fi-val">${fmt(f.val)}</span>
+              <button class="ab-pay ${f.pagado?'pay-un':'pay-ok'}" onclick="toggleMaxi('${f.id}')">${f.pagado?'✅ Pagado':'Marcar pagado'}</button>
+            </div>
+          </div>`).join('')}
+      </div>`).join('')||'<div class="empty-s"><div class="big">👷</div><p>Sin fiestas este año</p></div>'}`;
+}
+
+
+// ── GASTOS DE SECCIONAL ──
+window.renderGastos=function(){
+  const gastos=DB.gastos?Object.entries(DB.gastos).map(([k,g])=>({...g,_key:k})):[];
+  gastos.sort((a,b)=>(b.ts||0)-(a.ts||0)); // más reciente primero
+
+  // Calcular totales
+  const res=getR().filter(r=>!['cancelada','vencida'].includes(r.estado));
+  const calcMaxi=r=>Math.round((Number(r.precioBase)||0)*0.3)+Math.round((Number(r.costoExtra)||0)*0.5);
+  const netoFiestas=res.reduce((s,r)=>{
+    const tc=Number(r.totalCobrado)||0;
+    const mc=Number(r.montoCobrado)||0;
+    if(tc>0) return s+tc-(Number(r.precioSeg)||0)-calcMaxi(r);
+    if(mc>0) return s+mc;
+    return s;
+  },0);
+  const totalGastado=gastos.reduce((s,g)=>s+(Number(g.monto)||0),0);
+  const saldo=netoFiestas-totalGastado;
+
+  document.getElementById('gastosContent').innerHTML=`
+    <!-- PANEL RESUMEN -->
+    <div class="gasto-resumen">
+      <div class="gasto-res-row">
+        <span class="gasto-res-lbl">💵 Lo que podés gastar (neto fiestas)</span>
+        <span class="gasto-res-val">${fmt(netoFiestas)}</span>
+      </div>
+      <div class="gasto-res-row">
+        <span class="gasto-res-lbl">🧾 Total gastado en seccional</span>
+        <span class="gasto-res-val" style="color:var(--warn)">− ${fmt(totalGastado)}</span>
+      </div>
+      <div class="gasto-res-divider"></div>
+      <div class="gasto-res-row">
+        <span class="gasto-res-lbl" style="font-weight:800;color:${saldo>=0?'var(--g1)':'var(--danger)'}">= Saldo disponible</span>
+        <span class="gasto-res-val" style="font-size:1.35rem;color:${saldo>=0?'var(--g2)':'var(--danger)'}">${fmt(saldo)}</span>
+      </div>
+    </div>
+
+    <!-- FORMULARIO NUEVO GASTO -->
+    <div class="gasto-form-wrap">
+      <div class="gasto-form-title">➕ Registrar gasto</div>
+      <div class="gasto-grid">
+        <div class="fg" style="margin:0"><label>Detalle *</label><input type="text" id="gDetalle" placeholder="Qué se compró"></div>
+        <div class="fg" style="margin:0"><label>Lugar *</label><input type="text" id="gLugar" placeholder="Dónde"></div>
+        <div class="fg" style="margin:0"><label>Nro. Factura</label><input type="text" id="gFactura" placeholder="Opcional"></div>
+        <div class="fg" style="margin:0"><label>Monto *</label><div class="miw"><span>$</span><input type="number" id="gMonto" placeholder="0" class="mi" style="padding:8px 8px 8px 20px"></div></div>
+        <div class="fg" style="margin:0;grid-column:1/-1"><label>Comentario adicional</label><input type="text" id="gComentario" placeholder="Opcional — cualquier aclaración"></div>
+      </div>
+      <button class="btnp" style="margin-top:10px;font-size:.88rem;padding:11px" onclick="agregarGasto()">💾 Guardar gasto</button>
+    </div>
+
+    <!-- LISTA DE GASTOS -->
+    ${gastos.length===0?`<div class="empty-s"><div class="big">🧾</div><p>Sin gastos registrados</p></div>`:`
+    <div class="gasto-lista-title">📋 Gastos registrados (${gastos.length})</div>
+    ${gastos.map(g=>`
+      <div class="gasto-item">
+        <div class="gasto-item-top">
+          <div>
+            <div class="gasto-item-detalle">${g.detalle}</div>
+            <div class="gasto-item-meta">${g.lugar}${g.factura?' · Fac: '+g.factura:''}${g.fecha?' · '+g.fecha:''}</div>
+            ${g.comentario?`<div class="gasto-item-comentario">💬 ${g.comentario}</div>`:''}
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+            <span class="gasto-item-monto">${fmt(Number(g.monto)||0)}</span>
+            <button onclick="eliminarGasto('${g._key}')" style="background:var(--danger-bg);color:var(--danger);border:1px solid #e8c0c0;border-radius:6px;padding:4px 9px;font-size:.72rem;cursor:pointer;font-weight:600">🗑</button>
+          </div>
+        </div>
+      </div>`).join('')}
+    `}`;
+};
+
+window.agregarGasto=async()=>{
+  const detalle=document.getElementById('gDetalle').value.trim();
+  const lugar=document.getElementById('gLugar').value.trim();
+  const factura=document.getElementById('gFactura').value.trim();
+  const monto=parseFloat(document.getElementById('gMonto').value);
+  const comentario=document.getElementById('gComentario').value.trim();
+  if(!detalle||!lugar||isNaN(monto)||monto<=0){showToast('⚠️ Completá detalle, lugar y monto');return;}
+  const nuevo={
+    detalle,lugar,factura,monto,comentario,
+    fecha:new Date().toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'}),
+    ts:Date.now()
+  };
+  const newRef=push(ref(db,'gastos'));
+  await set(newRef,nuevo);
+  ['gDetalle','gLugar','gFactura','gMonto','gComentario'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  showToast('✅ Gasto registrado');
+};
+
+window.eliminarGasto=async(key)=>{
+  if(!confirm('¿Eliminar este gasto?'))return;
+  await dbRemove(`gastos/${key}`);
+  showToast('🗑 Gasto eliminado');
+};
+
+
+window.toggleDesglose=()=>{
+  const el=document.getElementById('desgloseDetalle');
+  const arr=document.getElementById('desgloseArrow');
+  const open=el.style.display==='none';
+  el.style.display=open?'':'none';
+  if(arr)arr.style.transform=open?'rotate(90deg)':'';
+};
+// ── CSV ──
+window.exportCSV=()=>{
+  const res=getR();
+  const h=['Código','Nro.Contrato','Nombre','Tel','Tipo','Personas','Fecha','Turno','Feriado','Afiliado','Estado','Alquiler','Seguro','Total','Seña','Cobrado','Total Cobrado','Seg.Devuelto','Maxi 30%','Maxi Pagado'];
+  const rows=res.map(r=>[r.codigo,r.nroContrato||'',r.nombre,r.tel,r.tipoEvento,r.personas,r.fecha,r.turnoNombre,esFeriado(r.fecha)?'Sí':'No',r.afiliado?'Sí':'No',r.estado,r.precioBase||'',r.precioSeg||'',r.precioTotal||'',r.precioSena||'',r.montoCobrado||'',r.totalCobrado||'',r.segDevuelto?'Sí':'No',r.precioMaxi||'',r.maxiPagado?'Sí':'No'].map(v=>`"${v}"`).join(','));
+  const csv='\uFEFF'+[h.join(','),...rows].join('\n');
+  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download=`salon-balance-${new Date().getFullYear()}.csv`;a.click();
+  showToast('✅ CSV descargado');
+};
+
+// ── CONFIG ──
+window.loadConfigUI=()=>{ loadLimiteUI();renderFeriados();renderBloqueos();const p=getP();document.getElementById('pPLV').value=p.pLV;document.getElementById('pPF').value=p.pF;document.getElementById('pSP').value=p.sP;document.getElementById('pALV').value=p.aLV;document.getElementById('pAF').value=p.aF;document.getElementById('pSA').value=p.sA; };
+window.guardarPrecios=async()=>{
+  const p={pLV:+document.getElementById('pPLV').value,pF:+document.getElementById('pPF').value,sP:+document.getElementById('pSP').value,aLV:+document.getElementById('pALV').value,aF:+document.getElementById('pAF').value,sA:+document.getElementById('pSA').value};
+  if(Object.values(p).some(v=>isNaN(v)||v<0)){showToast('⚠️ Revisá los valores');return;}
+  await dbSet('config',p);showToast('✅ Precios actualizados');
+};
+window.cambiarPass=async()=>{
+  const actual=document.getElementById('passActual').value;
+  const nueva=document.getElementById('passNueva').value.trim();
+  const repetir=document.getElementById('passRepetir').value.trim();
+  if(actual!==DB.pass){showToast('❌ Contraseña actual incorrecta');return;}
+  if(!nueva||nueva.length<4){showToast('⚠️ Mínimo 4 caracteres');return;}
+  if(nueva!==repetir){showToast('❌ Las contraseñas no coinciden');return;}
+  await dbSet('pass',nueva);
+  ['passActual','passNueva','passRepetir'].forEach(id=>document.getElementById(id).value='');
+  showToast('✅ Contraseña cambiada');
+};
+
+// ── UTILS ──
+window.showPage=p=>{
+  document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
+  document.getElementById(`page-${p}`).classList.add('active');
+  document.getElementById('btnC').classList.toggle('active',p==='client');
+  document.getElementById('btnA').classList.toggle('active',p==='admin');
+  if(p==='admin'&&document.getElementById('adminPanel')?.style.display!=='none')renderAdmin();
+};
+window.showToast=msg=>{ const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200); };
+
+// ── INIT ──
+cargarTodo();
+setInterval(()=>{ chkVenc(); if(document.getElementById('adminPanel')?.style.display!=='none'){renderMenuStats();if(nivelAdmin==='reservas')renderListaMeses();else if(nivelAdmin==='mes'&&mesActivoKey)irAMes(mesActivoKey);} },60000);
+</script>
+</body>
+</html>
