@@ -1,0 +1,27 @@
+/* ── ADMIN MODULE ── */
+
+:root{
+  --bg:#0f1117;--sf:#181c27;--sf2:#1e2336;--bd:#2a3047;--bd2:#363f5a;
+  --tx:#e8ecf4;--tx2:#8b95b0;--tx3:#5a6278;
+  --ac:#4f8ef7;--ac2:#3a6fd8;
+  --gn:#2ecc71;--gnb:#0d2a1a;--gnbd:rgba(46,204,113,.3);
+  --or:#f39c12;--orb:#2a1e08;
+  --rd:#e74c3c;--rdb:#2a0d0d;
+  --pu:#9b59b6;--gl:#f1c40f;
+  --r:10px;--sh:0 4px 24px rgba(0,0,0,.45);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-height:100vh;font-size:14px}
+::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:var(--sf)}::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:3px}
+.shell{display:flex;height:100vh;overflow:hidden}
+.sidebar{width:218px;min-width:218px;background:var(--sf);border-right:1px solid var(--bd);display:flex;flex-direction:column}
+.main{flex:1;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.logo{padding:16px 14px 12px;border-bottom:1px solid var(--bd)}
+.logo-t{font-size:15px;font-weight:700;letter-spacing:-.3px}.logo-s{font-size:10px;color:var(--tx3);margin-top:2px}
+.nav{flex:1;padding:6px;overflow-y:auto}
+.nsec{font-size:10px;font-weight:600;color:var(--tx3);letter-spacing:.7px;padding:9px 8px 2px;text-transform:uppercase}
+.ni{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:7px;cursor:pointer;color:var(--tx2);font-size:13px;font-weight:500;margin-bottom:1px;transition:.13s;white-space:nowrap}
+.ni:hover{background:var(--sf2);color:var(--tx)}.ni.active{background:rgba(79,142,247,.15);color:var(--ac)}
+.ni .ic{width:15px;text-align:center;font-size:14px;flex-shrink:0}
+.nbadge{margin-left:auto;background:var(--or);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;font-family:'DM Mono',monospace}
+.sfooter{padding:10px 12px;border-top:1px solid var(--bd);font-size:10px;color:var(--tx3)}

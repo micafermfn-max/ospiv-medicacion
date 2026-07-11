@@ -1,0 +1,16 @@
+/* ── RESPONSIVE DESKTOP ── */
+@media(min-width:1200px){
+  .content{padding:24px 32px}
+  .kg{grid-template-columns:repeat(4,1fr)}
+}
+@media(min-width:1600px){
+  .content{padding:28px 40px}
+}
+/* Tabla afiliados scrollable en pantallas chicas */
+#af-tbl{overflow-x:auto;width:100%}
+#af-tbl table{min-width:900px}
+/* Sidebar fija en escritorio */
+@media(min-width:641px){
+  .shell{height:100vh;overflow:hidden}
+  .sidebar{height:100vh;overflow-y:auto}
+}
