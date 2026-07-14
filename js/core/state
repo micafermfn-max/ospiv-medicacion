@@ -1,0 +1,7 @@
+// Estado global compartido (extraído verbatim del inline en Etapa 4 - Paso 0)
+// Sin cambios de lógica ni de inicialización; solo centraliza las declaraciones.
+let currentUser = null;
+let allData = [];
+let allRemesas = [];
+let allExcepciones = [];
+let adminPass = null;
