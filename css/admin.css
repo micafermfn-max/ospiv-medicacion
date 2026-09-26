@@ -80,6 +80,23 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px 0}
 .step-num{width:22px;height:22px;background:var(--ac);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
 .step-row{display:flex;gap:10px;align-items:flex-start;margin-bottom:12px}
 .code-box{background:var(--bg);border:1px solid var(--bd2);border-radius:6px;padding:10px 13px;font-family:'DM Mono',monospace;font-size:11.5px;color:var(--ac);margin:8px 0;word-break:break-all;position:relative}
+/* ── HISTORIAL INSUMOS LEGIBILITY ── */
+#af-insumos-wrap{margin-top:20px;padding:12px 0;border-top:1px solid var(--bd)}
+#af-insumos-title{font-size:11px;font-weight:700;color:var(--gn);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px}
+.historial-table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px}
+.historial-table th{background:var(--bd);color:var(--tx);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.3px;padding:9px 11px;text-align:left;border-bottom:2px solid var(--bd2);white-space:nowrap;position:sticky;top:0;z-index:1}
+.historial-table td{padding:8px 11px;border-bottom:1px solid var(--bd);color:var(--tx);vertical-align:middle}
+.historial-table tr:hover td{background:rgba(79,142,247,.06)}
+.historial-table .ht-fecha{font-family:'DM Mono',monospace;font-size:11px;color:var(--tx2)}
+.historial-table .ht-modal{font-weight:600;color:var(--ac)}
+.historial-table .ht-secc{font-weight:500;color:var(--tx)}
+.historial-table .ht-insumo{font-weight:500}
+.historial-table .ht-qty{font-family:'DM Mono',monospace;font-weight:600;text-align:right;color:var(--gn)}
+.historial-totals{margin-top:14px;padding:12px;background:var(--sf2);border:1px solid var(--bd);border-radius:8px}
+.historial-totals .total-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd);font-size:12px}
+.historial-totals .total-row:last-child{border-bottom:none}
+.historial-totals .total-label{font-weight:600;color:var(--tx)}
+.historial-totals .total-value{font-family:'DM Mono',monospace;font-weight:700;color:var(--gn);font-size:13px}
 /* ── TABLET ── */
 @media(max-width:900px){
   .kg{grid-template-columns:1fr 1fr}
@@ -112,4 +129,3 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px 0}
   #mode-admin{height:auto;overflow:visible;flex-direction:column}
   .mode-admin{height:auto !important}
 }
-
