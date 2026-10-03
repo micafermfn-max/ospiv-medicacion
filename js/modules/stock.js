@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════════════
-// 🏬 STOCK Y MOVIMIENTOS — SEC-1a.2 (SOLO LECTURA)
+// 🏬 STOCK Y MOVIMIENTOS — SEC-1a.2 (SOLO LECTURA) · ajuste: artículos por ArticuloID
 // ----------------------------------------------------------------------
 // Módulo independiente. No modifica DB, allData, localStorage ni la hoja
 // Entregas. Solo llama a acciones del servidor que empiezan con "stk_".
@@ -228,8 +228,10 @@ function stkMarcarDuplicados(items) {
   var grupos = {};
   items.forEach(function(it) {
     it.dupExacto = []; it.dupCercano = [];
-    if (!it.fecha || !it.dni || !it.insumoNorm) return;
-    var k = it.dni + '|' + it.insumoNorm;
+    if (!it.fecha || !it.dni || !(it.articuloId || it.insumoNorm)) return;
+    // Ajuste SEC-1a.2: si el artículo está identificado se agrupa por ArticuloID, así dos textos
+    // históricos distintos del mismo artículo también se detectan como duplicado.
+    var k = it.dni + '|' + (it.articuloId ? 'A:' + it.articuloId : 'T:' + it.insumoNorm);
     (grupos[k] = grupos[k] || []).push(it);
   });
   Object.keys(grupos).forEach(function(k) {
@@ -245,24 +247,72 @@ function stkMarcarDuplicados(items) {
   });
 }
 
+// ── Ajuste SEC-1a.2: resolución del artículo de una entrega ─────────────
+// Orden: 1) ArticuloID de la entrega · 2) TextoEntregas del catálogo · 3) _StkMapeoTextos · 4) ❓
+// Comparación de textos: ignora mayúsculas, acentos y espacios duplicados (stkNorm).
+// Sin coincidencias aproximadas: las palabras deben ser exactamente las mismas.
+function stkConstruirResolutor(datos) {
+  var R = { arts: {}, porTexto: {}, conflictosTexto: {}, porMapeo: {}, conflictosMapeo: {}, avisosMapeo: [], mapeosActivos: 0 };
+  (datos.articulos || []).forEach(function(a) {
+    var id = stkCampo(a, 'ID');
+    if (id) R.arts[id] = a;
+  });
+  (datos.articulos || []).forEach(function(a) {
+    var k = stkNorm(a.TextoEntregas);
+    if (!stkVerdadero(a.GeneraEntrega) || !k) return;
+    if (R.porTexto[k] && stkCampo(R.porTexto[k], 'ID') !== stkCampo(a, 'ID')) R.conflictosTexto[k] = true;
+    else R.porTexto[k] = a;
+  });
+  (datos.mapeos || []).forEach(function(m) {
+    if (!stkVerdadero(m.Activo)) return;
+    var k = stkNorm(m.TextoOriginal), id = stkCampo(m, 'ArticuloID');
+    if (!k) return;
+    R.mapeosActivos++;
+    var guardado = stkCampo(m, 'TextoNormalizado');
+    if (guardado && guardado !== k) R.avisosMapeo.push('El mapeo "' + m.TextoOriginal + '" tiene TextoNormalizado "' + guardado + '"; se usa "' + k + '".');
+    if (R.porTexto[k]) R.avisosMapeo.push('El mapeo "' + m.TextoOriginal + '" no es necesario: ese texto ya coincide con el TextoEntregas de un artículo.');
+    if (R.porMapeo[k] && R.porMapeo[k] !== id) R.conflictosMapeo[k] = true;
+    else R.porMapeo[k] = id;
+  });
+  return R;
+}
+
+function stkResolverArticulo(f, R) {
+  var id = stkCampo(f, 'ArticuloID');
+  if (id) {
+    return R.arts[id] ? { articulo: R.arts[id], via: 'ID', motivo: '' }
+                      : { articulo: null, via: '', motivo: 'ArticuloID desconocido: ' + id };
+  }
+  var k = stkNorm(stkCampo(f, 'Insumo'));
+  if (!k) return { articulo: null, via: '', motivo: 'Insumo vacío' };
+  if (R.conflictosTexto[k]) return { articulo: null, via: '', motivo: 'Varios artículos tienen este mismo TextoEntregas' };
+  if (R.porTexto[k]) return { articulo: R.porTexto[k], via: 'Texto', motivo: '' };
+  if (R.conflictosMapeo[k]) return { articulo: null, via: '', motivo: 'Hay mapeos activos en conflicto para este texto' };
+  if (R.porMapeo[k]) {
+    var a = R.arts[R.porMapeo[k]];
+    return a ? { articulo: a, via: 'Mapeo', motivo: '' }
+             : { articulo: null, via: '', motivo: 'El mapeo apunta a un ArticuloID inexistente: ' + R.porMapeo[k] };
+  }
+  return { articulo: null, via: '', motivo: 'Texto sin artículo ni mapeo' };
+}
+
 function stkAnalizar(datos) {
   var corte = (datos.config && datos.config.fechaCorte) || STK_CORTE_ESPERADO;
   var ubicIds = {};
   (datos.ubicaciones || []).forEach(function(u) { ubicIds[stkNorm(u.ID)] = true; });
-  var artPorTexto = {};
-  (datos.articulos || []).forEach(function(a) {
-    if (stkVerdadero(a.GeneraEntrega) && stkCampo(a, 'TextoEntregas')) artPorTexto[stkNorm(a.TextoEntregas)] = a;
-  });
+  var R = stkConstruirResolutor(datos);
 
   var filas = (datos.entregas && datos.entregas.filas) || [];
   var items = filas.map(function(f) {
     var insumo = stkCampo(f, 'Insumo');
-    var art = artPorTexto[stkNorm(insumo)] || null;
+    var res = stkResolverArticulo(f, R);
+    var art = res.articulo;
     var est = stkEstadoEntrega(f, ubicIds);
     return {
       fila: f._fila, id: stkCampo(f, 'ID'), fechaRaw: stkCampo(f, 'Fecha'), fecha: stkFechaISO(f['Fecha']),
       dni: stkCampo(f, 'DNI'), nombre: stkCampo(f, 'Apellido y nombre'),
-      insumo: insumo, insumoNorm: stkNorm(insumo), articuloId: art ? String(art.ID) : '', noIdentificado: !art,
+      insumo: insumo, insumoNorm: stkNorm(insumo), articuloId: art ? stkCampo(art, 'ID') : '', noIdentificado: !art,
+      articuloNombre: art ? stkCampo(art, 'Nombre') : '', via: res.via, motivoArt: res.motivo,
       cajas: stkCampo(f, 'Cajas'), lugar: stkCampo(f, 'Seccional'), modalidad: stkCampo(f, 'Modalidad'),
       pedidoId: stkCampo(f, 'PedidoId'), nota: stkCampo(f, 'Nota'),
       estado: est.estado, motivo: est.motivo, origen: est.origen
@@ -297,13 +347,31 @@ function stkAnalizar(datos) {
     meses.push(Object.assign({ mes: m }, porMes[m] || { SIN_CLASIFICAR: 0, SIN_STOCK: 0, CON_ORIGEN: 0, total: 0, noId: 0, dup: 0 }));
   }
 
+  // Insumos para el filtro: agrupados por texto normalizado (las variantes de mayúsculas/acentos se unen)
   var lugares = {}, insumos = {};
-  desde.forEach(function(it) { lugares[it.lugar || ''] = true; insumos[it.insumo || ''] = true; });
+  desde.forEach(function(it) {
+    lugares[it.lugar || ''] = true;
+    if (!insumos[it.insumoNorm]) insumos[it.insumoNorm] = it.articuloNombre && it.via === 'Texto' ? it.articuloNombre : (it.insumo || '(sin insumo)');
+  });
+
+  // Textos históricos sin artículo (todas las filas, con su cantidad desde el corte)
+  var sinArt = {};
+  items.forEach(function(it) {
+    if (!it.noIdentificado) return;
+    var k = it.insumoNorm;
+    var g = sinArt[k] = sinArt[k] || { clave: k, texto: it.insumo || '(vacío)', desde: 0, total: 0, motivo: it.motivoArt };
+    g.total++;
+    if (it.fecha && it.fecha >= corte) g.desde++;
+  });
+  var textosSinArticulo = Object.keys(sinArt).map(function(k) { return sinArt[k]; })
+    .sort(function(a, b) { return (b.desde - a.desde) || (b.total - a.total) || (a.texto < b.texto ? -1 : 1); });
 
   return {
     corte: corte, total: items.length, anteriores: anteriores, desde: desde, invalidas: invalidas,
-    conteo: conteo, meses: meses,
-    lugares: Object.keys(lugares).sort(), insumos: Object.keys(insumos).sort()
+    conteo: conteo, meses: meses, resolutor: R, textosSinArticulo: textosSinArticulo,
+    lugares: Object.keys(lugares).sort(),
+    insumos: Object.keys(insumos).sort(function(a, b) { return insumos[a] < insumos[b] ? -1 : 1; })
+      .map(function(k) { return { clave: k, texto: insumos[k] }; })
   };
 }
 
@@ -313,7 +381,7 @@ function stkFiltrarEntregas(lista, f) {
     if (f.mes && it.fecha.slice(0, 7) !== f.mes) return false;
     if (f.estado && it.estado !== f.estado) return false;
     if (f.lugar != null && f.lugar !== '__todos' && it.lugar !== f.lugar) return false;
-    if (f.insumo != null && f.insumo !== '__todos' && it.insumo !== f.insumo) return false;
+    if (f.insumo != null && f.insumo !== '__todos' && it.insumoNorm !== f.insumo) return false;
     if (f.soloDup && !(it.dupExacto.length || it.dupCercano.length)) return false;
     if (f.soloNoId && !it.noIdentificado) return false;
     if (txt && stkNorm(it.dni).indexOf(txt) < 0 && stkNorm(it.nombre).indexOf(txt) < 0) return false;
@@ -432,6 +500,8 @@ function renderStkResumen(c) {
     '</tbody></table></div></div>';
 
   // Catálogo agrupado por categoría
+  var R = a.resolutor;
+  var unidadesOk = d.unidades || [];
   var arts = (d.articulos || []).slice();
   var cats = {};
   arts.forEach(function(x) { var k = String(x.Categoria || 'OTRO').toUpperCase(); (cats[k] = cats[k] || []).push(x); });
@@ -442,11 +512,33 @@ function renderStkResumen(c) {
     (arts.length ? ordenCats.map(function(k) {
       return '<tr class="stk-grupo"><td colspan="6">' + stkEsc(k) + ' · ' + cats[k].length + '</td></tr>' +
         cats[k].map(function(x) {
-          return '<tr><td class="mono">' + stkEsc(x.ID) + '</td><td>' + stkEsc(x.Nombre) + '</td><td>' + stkEsc(x.Unidad || '—') + '</td><td>' +
+          var uOk = unidadesOk.indexOf(String(x.Unidad || '')) >= 0;
+          var tDup = stkVerdadero(x.GeneraEntrega) && R.conflictosTexto[stkNorm(x.TextoEntregas)];
+          return '<tr><td class="mono">' + stkEsc(x.ID) + '</td><td>' + stkEsc(x.Nombre) + '</td><td>' + stkEsc(x.Unidad || '—') +
+            (uOk ? '' : ' <span class="b br" title="Unidad fuera de la lista: ' + stkEsc(unidadesOk.join(', ')) + '">⚠ unidad no válida</span>') + '</td><td>' +
             (stkVerdadero(x.GeneraEntrega) ? '<span class="b bb">Sí</span>' : '<span class="b bgr">No</span>') + '</td><td class="stk-dim">' +
-            stkEsc(x.TextoEntregas || '—') + '</td><td>' + (stkVerdadero(x.Activo) ? '<span class="b bg">Sí</span>' : '<span class="b bgr">No</span>') + '</td></tr>';
+            stkEsc(x.TextoEntregas || '—') + (tDup ? ' <span class="b br">⚠ TextoEntregas repetido</span>' : '') + '</td><td>' +
+            (stkVerdadero(x.Activo) ? '<span class="b bg">Sí</span>' : '<span class="b bgr">No</span>') + '</td></tr>';
         }).join('');
     }).join('') : '<tr><td colspan="6" class="stk-dim" style="text-align:center">Catálogo vacío</td></tr>') +
+    '</tbody></table></div>' +
+    '<div class="stk-body stk-dim" style="margin:0">Unidades permitidas: ' + stkEsc(unidadesOk.join(', ')) + '</div></div>';
+
+  // Mapeos de textos históricos (solo lectura; la carga se habilita en SEC-1a.3a)
+  var maps = d.mapeos || [];
+  h += '<div class="card"><div class="ch">🔗 <span class="ct">Mapeos de textos históricos</span><span class="stk-dim">' + maps.length +
+    ' · ' + R.mapeosActivos + ' activo(s) · solo para Entregas históricas sin ArticuloID</span></div>' +
+    (R.avisosMapeo.length ? '<div class="stk-body">' + R.avisosMapeo.map(function(t) { return '<div class="stk-aviso warn">⚠ ' + stkEsc(t) + '</div>'; }).join('') + '</div>' : '') +
+    '<div class="cb tw"><table><thead><tr><th>Texto original</th><th>Artículo</th><th>Activo</th><th>Observación</th></tr></thead><tbody>' +
+    (maps.length ? maps.map(function(m) {
+      var art = R.arts[stkCampo(m, 'ArticuloID')];
+      var conf = stkVerdadero(m.Activo) && R.conflictosMapeo[stkNorm(m.TextoOriginal)];
+      return '<tr><td>' + stkEsc(m.TextoOriginal || '—') + (conf ? ' <span class="b br">⚠ en conflicto</span>' : '') + '</td><td>' +
+        (art ? stkEsc(art.Nombre) + '<div class="mono stk-dim">' + stkEsc(art.ID) + '</div>'
+             : '<span class="b br">⚠ ArticuloID inexistente: ' + stkEsc(m.ArticuloID || '(vacío)') + '</span>') + '</td><td>' +
+        (stkVerdadero(m.Activo) ? '<span class="b bg">Sí</span>' : '<span class="b bgr">No</span>') + '</td><td class="stk-dim">' +
+        stkEsc(m.Observacion || '') + '</td></tr>';
+    }).join('') : '<tr><td colspan="4" class="stk-dim" style="text-align:center">Sin mapeos. La carga de mapeos se habilita en SEC-1a.3a.</td></tr>') +
     '</tbody></table></div></div>';
 
   c.innerHTML = h;
@@ -484,7 +576,7 @@ function renderStkEntregas(c) {
     '<select id="stk-f-lugar" onchange="stkSetFiltro(\'lugar\',this.value)" style="' + est + '">' + stkOpt('__todos', 'Todos los lugares de retiro', f.lugar) +
       a.lugares.map(function(l) { return stkOpt(l, l || '(sin lugar)', f.lugar); }).join('') + '</select>' +
     '<select id="stk-f-insumo" onchange="stkSetFiltro(\'insumo\',this.value)" style="' + est + ';max-width:240px">' + stkOpt('__todos', 'Todos los insumos', f.insumo) +
-      a.insumos.map(function(i) { return stkOpt(i, i || '(sin insumo)', f.insumo); }).join('') + '</select>' +
+      a.insumos.map(function(i) { return stkOpt(i.clave, i.texto, f.insumo); }).join('') + '</select>' +
     '<label class="stk-check"><input type="checkbox" ' + (f.soloDup ? 'checked ' : '') + 'onchange="stkSetFiltro(\'soloDup\',this.checked)"> Solo duplicados</label>' +
     '<label class="stk-check"><input type="checkbox" ' + (f.soloNoId ? 'checked ' : '') + 'onchange="stkSetFiltro(\'soloNoId\',this.checked)"> Solo ❓</label>' +
     '<button class="btn bs bsm" onclick="stkLimpiarFiltros()">Limpiar</button>' +
@@ -493,6 +585,20 @@ function renderStkEntregas(c) {
 
   h += '<div class="card"><div class="ch">📋 <span class="ct">Entregas desde el ' + stkFmtFecha(a.corte) + '</span>' +
     '<span class="stk-dim" id="stk-ent-count"></span></div><div class="cb tw" id="stk-ent-lista"></div></div>';
+
+  // Textos históricos sin artículo
+  var tsa = a.textosSinArticulo;
+  h += '<div class="card"><div class="ch">❓ <span class="ct">Textos históricos sin artículo</span><span class="stk-dim">' + tsa.length +
+    ' texto(s) distinto(s) · se resolverán con mapeos en SEC-1a.3a</span></div><div class="cb tw">' +
+    (tsa.length ? '<table><thead><tr><th>Texto en Entregas</th><th>Filas desde el corte</th><th>Filas en total</th><th>Motivo</th><th></th></tr></thead><tbody>' +
+      tsa.map(function(t, i) {
+        return '<tr><td>' + stkEsc(t.texto) + '</td><td class="mono" style="font-weight:600">' + t.desde + '</td><td class="mono">' + t.total +
+          '</td><td class="stk-dim">' + stkEsc(t.motivo) + '</td><td>' +
+          (t.desde ? '<button class="btn bs bsm" onclick="stkFiltrarTexto(' + i + ')">Ver filas</button>' : '') +
+          '</td></tr>';
+      }).join('') + '</tbody></table>'
+      : '<div class="stk-vacio">✓ Todas las entregas tienen un artículo identificado.</div>') +
+    '</div></div>';
 
   // Fechas inválidas
   if (a.invalidas.length) {
@@ -508,7 +614,7 @@ function stkMarcasHtml(it) {
   var m = [];
   if (it.dupExacto.length) m.push('<span class="b br" title="Mismo DNI, insumo y fecha">🔁 Duplicado · fila ' + it.dupExacto.join(', ') + '</span>');
   if (it.dupCercano.length) m.push('<span class="b bo" title="Mismo DNI e insumo con ≤ ' + STK_DIAS_POSIBLE_DUP + ' días de diferencia">🔁≈ Posible · fila ' + it.dupCercano.join(', ') + '</span>');
-  if (it.noIdentificado) m.push('<span class="b bpu" title="El insumo no coincide con el TextoEntregas de ningún artículo">❓ Artículo no identificado</span>');
+  if (it.noIdentificado) m.push('<span class="b bpu" title="' + stkEsc(it.motivoArt) + '">❓ Artículo no identificado</span>');
   return m.join(' ');
 }
 
@@ -516,6 +622,14 @@ function stkEstadoHtml(it) {
   if (it.estado === 'SIN_CLASIFICAR') return '<span class="b br" title="' + stkEsc(it.motivo) + '">🔴 Sin clasificar</span>';
   if (it.estado === 'SIN_STOCK') return '<span class="b bgr" title="' + stkEsc(it.motivo) + '">⚪ Sin stock</span>';
   return '<span class="b bg" title="' + stkEsc(it.motivo) + '">✅ ' + stkEsc(it.origen) + '</span>';
+}
+
+function stkInsumoHtml(it) {
+  if (!it.articuloId) return stkEsc(it.insumo || '—');
+  var h = '<div style="font-weight:500">' + stkEsc(it.articuloNombre) + '</div>' +
+    '<div class="mono stk-dim">' + stkEsc(it.articuloId) + ' · <span title="Cómo se identificó el artículo">' + stkEsc(it.via) + '</span></div>';
+  if (stkNorm(it.insumo) !== stkNorm(it.articuloNombre)) h += '<div class="stk-dim" title="Texto original en Entregas">texto: ' + stkEsc(it.insumo || '(vacío)') + '</div>';
+  return h;
 }
 
 function stkTablaEntregas(lista, mostrarFechaCruda) {
@@ -526,7 +640,7 @@ function stkTablaEntregas(lista, mostrarFechaCruda) {
         '<td class="mono stk-dim" title="ID ' + stkEsc(it.id) + '">' + stkEsc(it.fila) + '</td>' +
         '<td class="mono">' + (mostrarFechaCruda ? stkEsc(it.fechaRaw || '(vacía)') : stkFmtFecha(it.fecha)) + '</td>' +
         '<td><div style="font-weight:500">' + stkEsc(it.nombre || '—') + '</div><div class="mono stk-dim">' + stkEsc(it.dni || '—') + '</div></td>' +
-        '<td>' + stkEsc(it.insumo || '—') + (it.articuloId ? '<div class="mono stk-dim">' + stkEsc(it.articuloId) + '</div>' : '') + '</td>' +
+        '<td>' + stkInsumoHtml(it) + '</td>' +
         '<td class="mono">' + stkEsc(it.cajas) + '</td>' +
         '<td>' + stkEsc(it.lugar || '—') + '</td>' +
         '<td>' + stkEsc(it.modalidad || '—') + '</td>' +
@@ -572,6 +686,18 @@ function stkFiltrarMes(m) {
   stkRenderListaEntregas();
 }
 
+function stkFiltrarTexto(i) {
+  var t = stkEstado.analisis && stkEstado.analisis.textosSinArticulo[i];
+  if (!t) return;
+  var clave = t.clave;
+  stkEstado.filtros.insumo = clave;
+  var sel = document.getElementById('stk-f-insumo');
+  if (sel) sel.value = clave;
+  stkRenderListaEntregas();
+  var lista = document.getElementById('stk-ent-lista');
+  if (lista && lista.scrollIntoView) lista.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function stkLimpiarFiltros() {
   stkEstado.filtros = { mes: '', estado: '', lugar: '__todos', insumo: '__todos', texto: '', soloDup: false, soloNoId: false };
   renderStkPage();
@@ -588,13 +714,14 @@ function stkExportarCSV() {
   if (!stkEstado.analisis) return;
   var lista = stkFiltrarEntregas(stkEstado.analisis.desde, stkEstado.filtros);
   var nombresEstado = { SIN_CLASIFICAR: 'Sin clasificar', SIN_STOCK: 'Sin stock', CON_ORIGEN: 'Con origen' };
-  var enc = ['Fila', 'ID', 'Fecha', 'DNI', 'Apellido y nombre', 'Insumo', 'ArticuloID', 'Cajas', 'Lugar de retiro',
-             'Modalidad', 'PedidoId', 'Estado', 'Motivo', 'Duplicado exacto (filas)', 'Posible duplicado (filas)', 'Artículo no identificado', 'Nota'];
+  var enc = ['Fila', 'ID', 'Fecha', 'DNI', 'Apellido y nombre', 'Insumo (texto en Entregas)', 'ArticuloID', 'Nombre del artículo',
+             'Identificación', 'Cajas', 'Lugar de retiro', 'Modalidad', 'PedidoId', 'Estado', 'Motivo',
+             'Duplicado exacto (filas)', 'Posible duplicado (filas)', 'Artículo no identificado', 'Motivo artículo', 'Nota'];
   var lineas = [enc.map(stkCeldaCSV).join(';')];
   lista.forEach(function(it) {
-    lineas.push([it.fila, it.id, stkFmtFecha(it.fecha), it.dni, it.nombre, it.insumo, it.articuloId, it.cajas, it.lugar,
-      it.modalidad, it.pedidoId, nombresEstado[it.estado] || it.estado, it.motivo, it.dupExacto.join(' '),
-      it.dupCercano.join(' '), it.noIdentificado ? 'Sí' : '', it.nota].map(stkCeldaCSV).join(';'));
+    lineas.push([it.fila, it.id, stkFmtFecha(it.fecha), it.dni, it.nombre, it.insumo, it.articuloId, it.articuloNombre,
+      it.via || '—', it.cajas, it.lugar, it.modalidad, it.pedidoId, nombresEstado[it.estado] || it.estado, it.motivo,
+      it.dupExacto.join(' '), it.dupCercano.join(' '), it.noIdentificado ? 'Sí' : '', it.motivoArt, it.nota].map(stkCeldaCSV).join(';'));
   });
   var blob = new Blob(['﻿' + lineas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
   var a = document.createElement('a');
