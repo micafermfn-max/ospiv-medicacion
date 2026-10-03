@@ -835,6 +835,11 @@ function stkArticulosActivos() {
   return ((stkEstado.datos && stkEstado.datos.articulos) || []).filter(function(a) { return stkVerdadero(a.Activo); });
 }
 
+// Ajuste 1a.3a: solo artículos activos que controlan stock y no se controlan por unidad (eso llega en 1a.3b)
+function stkArticulosOperables() {
+  return stkArticulosActivos().filter(function(a) { return stkVerdadero(a.ControlaStock) && !stkVerdadero(a.ControlaUnidades); });
+}
+
 function stkCant(n, art) {
   var u = art ? stkCampo(art, 'Unidad') : '';
   return (Number(n) || 0).toLocaleString('es-AR') + (u ? ' ' + u : '');
@@ -941,7 +946,7 @@ async function stkCargarMovs() {
   if (r.code === 'SESION_INVALIDA') return r;
   if (r.code === 'ACCION_DESCONOCIDA' || (r.ok && !Array.isArray(r.movimientos)))
     return { ok: false, msg: 'El servidor no tiene instalado SEC-1a.3a (falta la acción stk_getMovs). Actualizá el Code.gs y publicá una nueva versión.' };
-  if (r.ok) { stkEstado.movs = r.movimientos; stkEstado.hoy = r.hoy || ''; }
+  if (r.ok) { stkEstado.movs = r.movimientos; stkEstado.hoy = r.hoy || ''; stkEstado.listas = { campos: r.camposEntrega || {}, estados: r.estadosElemento || [] }; }
   return r;
 }
 
@@ -1194,14 +1199,14 @@ function renderStkCatalogo(c) {
   arts.forEach(function(x) { var k = String(x.Categoria || 'OTRO'); (cats[k] = cats[k] || []).push(x); });
   var orden = STK_ORDEN_CATEGORIAS.filter(function(k) { return cats[k]; }).concat(Object.keys(cats).filter(function(k) { return STK_ORDEN_CATEGORIAS.indexOf(k) < 0; }));
   var h = '<div class="stk-filtros"><button class="btn bp bsm" onclick="stkAbrirArticulo(null)">+ Nuevo artículo</button>' +
-    '<span class="stk-dim">El ID no cambia nunca. Con uso, Unidad, Genera entrega y TextoEntregas quedan bloqueados.</span></div>';
+    '<span class="stk-dim">El ID no cambia nunca. Con uso, Unidad, Controla stock, Controla tope de Diabetes, Control por unidad y TextoEntregas quedan bloqueados.</span></div>';
   h += '<div class="card"><div class="ch">🗂 <span class="ct">Artículos</span><span class="stk-dim">' + arts.length + '</span></div><div class="cb tw"><table>' +
-    '<thead><tr><th>ID</th><th>Nombre</th><th>Unidad</th><th>Genera entrega</th><th>TextoEntregas</th><th>Uso</th><th>Activo</th><th></th></tr></thead><tbody>' +
+    '<thead><tr><th>ID</th><th>Nombre</th><th>Unidad</th><th>Atributos</th><th>TextoEntregas</th><th>Uso</th><th>Activo</th><th></th></tr></thead><tbody>' +
     orden.map(function(k) {
       return '<tr class="stk-grupo"><td colspan="8">' + stkEsc(k) + ' · ' + cats[k].length + '</td></tr>' + cats[k].map(function(x) {
         var id = stkCampo(x, 'ID'), uso = stkUsoCliente(id), ref = stkRef(id), act = stkVerdadero(x.Activo);
         return '<tr><td class="mono">' + stkEsc(id) + '</td><td>' + stkEsc(x.Nombre) + '</td><td>' + stkEsc(x.Unidad) + '</td><td>' +
-          (stkVerdadero(x.GeneraEntrega) ? '<span class="b bb">Sí</span>' : '<span class="b bgr">No</span>') + '</td><td class="stk-dim">' +
+          stkAtributosHtml(x) + '</td><td class="stk-dim">' +
           stkEsc(x.TextoEntregas || '—') + '</td><td class="stk-dim" style="font-size:11px">' +
           (uso.total ? [uso.movimientos ? uso.movimientos + ' mov.' : '', uso.entregas ? uso.entregas + ' entregas' : '', uso.mapeos ? uso.mapeos + ' mapeos' : ''].filter(Boolean).join(' · ') : 'sin uso') +
           '</td><td>' + (act ? '<span class="b bg">Sí</span>' : '<span class="b bgr">No</span>') + '</td><td><div class="stk-acciones">' +
@@ -1231,6 +1236,17 @@ function renderStkCatalogo(c) {
           stkEsc(t.motivo) + '</td><td><button class="btn bp bsm" onclick="stkAbrirMapeo(' + i + ')">Mapear</button></td></tr>';
       }).join('') + '</tbody></table>' : '<div class="stk-vacio">✓ Todas las entregas tienen un artículo identificado.</div>') + '</div></div>';
   c.innerHTML = h;
+}
+
+function stkAtributosHtml(x) {
+  var b = [];
+  if (stkVerdadero(x.ControlaStock)) b.push('<span class="b bgr" title="Controla stock">Stock</span>');
+  if (stkVerdadero(x.GeneraEntrega)) b.push('<span class="b bb" title="Genera entrega a una persona">Entrega</span>');
+  if (stkVerdadero(x.ControlaTopeDiabetes)) b.push('<span class="b bo" title="Controla tope de Diabetes (hoja Entregas)">Tope DB</span>');
+  if (stkVerdadero(x.PermiteComodato)) b.push('<span class="b bpu" title="Permite comodato">Comodato</span>');
+  if (stkVerdadero(x.ControlaUnidades)) b.push('<span class="b bgr" title="Control por unidad individual">Por unidad</span>');
+  var campos = stkCamposLista(), cs = String(x.CamposEntrega || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  return b.join(' ') + (cs.length ? '<div class="stk-dim" style="font-size:11px">Pide: ' + stkEsc(cs.map(function(k) { return campos[k] ? campos[k].etiqueta : k; }).join(', ')) + '</div>' : '');
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -1329,7 +1345,7 @@ function stkDetalleSaldos(det) {
 // ══════════════════════════════════════════════════════════════════════
 function stkOpcionesArticulos(sel, excluir) {
   var cats = {};
-  stkArticulosActivos().forEach(function(a) { var k = String(a.Categoria || 'OTRO'); (cats[k] = cats[k] || []).push(a); });
+  stkArticulosOperables().forEach(function(a) { var k = String(a.Categoria || 'OTRO'); (cats[k] = cats[k] || []).push(a); });
   var orden = STK_ORDEN_CATEGORIAS.filter(function(k) { return cats[k]; }).concat(Object.keys(cats).filter(function(k) { return STK_ORDEN_CATEGORIAS.indexOf(k) < 0; }));
   return '<option value="">— Elegí un artículo —</option>' + orden.map(function(k) {
     return '<optgroup label="' + stkEsc(k) + '">' + cats[k].map(function(a) {
@@ -1382,7 +1398,7 @@ function stkAbrirOperacion(tipo) {
 
 // Stock inicial: un campo de cantidad por artículo activo
 function stkRenderLineasSI() {
-  var U = stkVal('stkm-destino'), arts = stkArticulosActivos();
+  var U = stkVal('stkm-destino'), arts = stkArticulosOperables();
   var declarados = {};
   stkEstado.movs.forEach(function(m) {
     if (stkEsActivo(m) && stkCampo(m, 'Tipo') === 'STOCK_INICIAL' && stkCampo(m, 'Destino') === U)
@@ -1578,15 +1594,33 @@ async function stkGuardarAnular() {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// ARTÍCULO: ALTA / EDICIÓN
+// ARTÍCULO: ALTA / EDICIÓN (ajuste 1a.3a: atributos separados)
 // ══════════════════════════════════════════════════════════════════════
+var STK_ATRIB_UI = [
+  { k: 'ControlaStock',        id: 'stkm-a-stock',    txt: 'Controla stock',                 ayuda: 'Se controla por cantidad (saldo y movimientos)' },
+  { k: 'GeneraEntrega',        id: 'stkm-a-entrega',  txt: 'Genera entrega a una persona',   ayuda: 'Se puede entregar a un afiliado/persona con trazabilidad' },
+  { k: 'ControlaTopeDiabetes', id: 'stkm-a-tope',     txt: 'Controla tope de Diabetes',      ayuda: 'Su entrega va a la hoja Entregas y cuenta para los topes' },
+  { k: 'PermiteComodato',      id: 'stkm-a-comodato', txt: 'Permite comodato',               ayuda: 'Puede prestarse y volver' },
+  { k: 'ControlaUnidades',     id: 'stkm-a-unidades', txt: 'Control por unidad individual',  ayuda: 'Se habilita en SEC-1a.3b' }
+];
+var STK_BLOQUEADOS_CON_USO = ['ControlaStock', 'ControlaTopeDiabetes', 'ControlaUnidades'];
+
+function stkCamposLista() {
+  return (stkEstado.listas && stkEstado.listas.campos) || {};
+}
+
 function stkAbrirArticulo(id) {
   var d = stkEstado.datos, a = id ? stkArtMap()[id] : null;
   var uso = a ? stkUsoCliente(id) : { total: 0 };
   var bloq = !!(a && uso.total > 0);
-  stkForm = { clase: 'articulo', reqId: stkNuevoReqId(), modo: a ? 'edicion' : 'alta', id: id, bloqueado: bloq,
-              prefijoPrevio: '', original: a ? { Unidad: stkCampo(a, 'Unidad'), GeneraEntrega: stkVerdadero(a.GeneraEntrega), TextoEntregas: stkCampo(a, 'TextoEntregas') } : null };
+  var orig = {};
+  STK_ATRIB_UI.forEach(function(x) { orig[x.k] = a ? stkVerdadero(a[x.k]) : (x.k === 'ControlaStock'); });
+  orig.Unidad = a ? stkCampo(a, 'Unidad') : 'unidad';
+  orig.TextoEntregas = a ? stkCampo(a, 'TextoEntregas') : '';
+  var camposAct = String(a ? stkCampo(a, 'CamposEntrega') : '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  stkForm = { clase: 'articulo', reqId: stkNuevoReqId(), modo: a ? 'edicion' : 'alta', id: id, bloqueado: bloq, original: orig, prefijoPrevio: '' };
   var cat = a ? stkCampo(a, 'Categoria') : 'MATERIAL';
+  var campos = stkCamposLista();
   var cuerpo = '<div class="stk-grid">' +
     '<div><div class="stk-k">ID ' + (a ? '(permanente)' : '(no se puede cambiar después)') + '</div>' +
       (a ? '<div class="stk-in mono" style="opacity:.8">' + stkEsc(id) + '</div>'
@@ -1595,16 +1629,25 @@ function stkAbrirArticulo(id) {
     '<div><div class="stk-k">Categoría</div><select class="stk-in" id="stkm-categoria" onchange="stkArtCambioCategoria()">' +
       (d.categorias || STK_ORDEN_CATEGORIAS).map(function(k) { return stkOpt(k, k, cat); }).join('') + '</select></div>' +
     '<div><div class="stk-k">Unidad</div><select class="stk-in" id="stkm-unidad"' + (bloq ? ' disabled' : '') + '>' +
-      (d.unidades || []).map(function(u) { return stkOpt(u, u, a ? stkCampo(a, 'Unidad') : 'unidad'); }).join('') + '</select></div>' +
-    '<div style="display:flex;align-items:flex-end"><label class="stk-check"><input type="checkbox" id="stkm-genera"' + (a && stkVerdadero(a.GeneraEntrega) ? ' checked' : '') +
-      (bloq ? ' disabled' : '') + ' onchange="stkArtPrevia()"> Genera entrega a afiliado</label></div>' +
-    '<div style="grid-column:1/-1"><div class="stk-k">TextoEntregas (texto que se escribe en Entregas.Insumo, por compatibilidad)</div>' +
-      '<input class="stk-in" id="stkm-texto" maxlength="120" value="' + stkEsc(a ? stkCampo(a, 'TextoEntregas') : '') + '"' + (bloq ? ' disabled' : '') + ' oninput="stkArtPrevia()"></div>' +
+      (d.unidades || []).map(function(u) { return stkOpt(u, u, orig.Unidad); }).join('') + '</select></div>' +
+    '</div>' +
+    '<div class="stk-k">Atributos</div><div class="stk-grid" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr))">' +
+    STK_ATRIB_UI.map(function(x) {
+      return '<div><label class="stk-check" title="' + stkEsc(x.ayuda) + '"><input type="checkbox" id="' + x.id + '"' + (orig[x.k] ? ' checked' : '') +
+        ' onchange="stkArtPrevia()"> ' + stkEsc(x.txt) + '</label><div class="stk-dim" style="margin-left:22px">' + stkEsc(x.ayuda) + '</div></div>';
+    }).join('') + '</div>' +
+    '<div class="stk-grid">' +
+    '<div style="grid-column:1/-1"><div class="stk-k">Datos que se piden al entregar o prestar (opcionales del artículo)</div><div class="stk-acciones" id="stkm-campos">' +
+      Object.keys(campos).map(function(k) {
+        return '<label class="stk-check"><input type="checkbox" class="stkm-campo" value="' + stkEsc(k) + '"' + (camposAct.indexOf(k) >= 0 ? ' checked' : '') + '> ' + stkEsc(campos[k].etiqueta) + '</label>';
+      }).join('') + '</div></div>' +
+    '<div style="grid-column:1/-1"><div class="stk-k">TextoEntregas (solo si controla tope de Diabetes: texto que se escribe en Entregas.Insumo)</div>' +
+      '<input class="stk-in" id="stkm-texto" maxlength="120" value="' + stkEsc(orig.TextoEntregas) + '" oninput="stkArtPrevia()"></div>' +
     '<div style="grid-column:1/-1"><div class="stk-k">Observación</div><input class="stk-in" id="stkm-observacion" maxlength="500" value="' + stkEsc(a ? stkCampo(a, 'Observacion') : '') + '"></div>' +
     (a ? '<div style="grid-column:1/-1"><div class="stk-k">Motivo de la modificación (obligatorio)</div><input class="stk-in" id="stkm-motivo" maxlength="500"></div>' : '') +
     '</div>' +
     (bloq ? '<div class="stk-aviso">🔒 Este artículo tiene uso (' + [uso.movimientos ? uso.movimientos + ' movimiento(s)' : '', uso.entregas ? uso.entregas + ' entrega(s)' : '',
-      uso.mapeos ? uso.mapeos + ' mapeo(s)' : ''].filter(Boolean).join(', ') + '): Unidad, Genera entrega y TextoEntregas no se pueden modificar. Si hace falta, desactivalo y creá otro.</div>' : '') +
+      uso.mapeos ? uso.mapeos + ' mapeo(s)' : ''].filter(Boolean).join(', ') + '): Unidad, Controla stock, Controla tope de Diabetes, Control por unidad y TextoEntregas no se pueden modificar. Si hace falta, desactivalo y creá otro.</div>' : '') +
     '<div id="stkm-previa"></div><div id="stkm-msg" class="stk-msg"></div>';
   stkModalAbrir(a ? 'Editar artículo · ' + id : 'Nuevo artículo', cuerpo, stkPieGuardar(a ? 'Guardar cambios' : 'Crear artículo'));
   if (!a) stkArtCambioCategoria();
@@ -1619,33 +1662,62 @@ function stkArtCambioCategoria() {
   stkArtPrevia();
 }
 
+// Aplica reglas de coherencia en pantalla y muestra la vista previa (el servidor valida igual)
 function stkArtPrevia() {
   var el = document.getElementById('stkm-previa');
-  if (!el) return;
-  var genera = stkChk('stkm-genera'), texto = stkVal('stkm-texto'), cat = stkVal('stkm-categoria');
-  var inp = document.getElementById('stkm-texto');
-  if (inp && !stkForm.bloqueado) inp.disabled = !genera;
-  if (!genera) { el.innerHTML = '<div class="stk-aviso">No genera entrega: sus movimientos nunca escriben en Entregas ni afectan topes.</div>'; return; }
-  if (!String(texto).trim()) { el.innerHTML = '<div class="stk-aviso warn">Indicá el TextoEntregas.</div>'; return; }
-  var c = stkCompatTopes(texto);
-  if (cat === 'DIABETES' && !c.tipo) {
-    el.innerHTML = '<div class="stk-aviso bad">✗ Un artículo de DIABETES necesita un TextoEntregas que los topes actuales reconozcan (debe contener "tira", "lanceta", "aguja" o "gluc").</div>';
-  } else if (c.tipo) {
-    el.innerHTML = '<div class="stk-aviso ' + (cat === 'DIABETES' ? 'ok' : 'warn') + '">' + (cat === 'DIABETES' ? '✓ ' : '⚠ ') +
-      'En los topes actuales contará como <strong>' + stkEsc(c.tipo) + '</strong> · ' + (c.unidadesPorEnvase || 1) + ' unidad(es) por cada caja entregada.' +
-      (cat === 'DIABETES' ? '' : ' Este artículo no es de DIABETES: confirmá que es correcto.<div style="margin-top:8px"><label class="stk-check"><input type="checkbox" id="stkm-conf-adv"> Confirmo que debe contar para ese tope</label></div>') + '</div>';
-  } else {
-    el.innerHTML = '<div class="stk-aviso">No cuenta para los topes de Diabetes.</div>';
+  if (!el || !stkForm) return;
+  var bloq = stkForm.bloqueado;
+  function cb(id) { return document.getElementById(id); }
+  var cStock = cb('stkm-a-stock'), cEnt = cb('stkm-a-entrega'), cTope = cb('stkm-a-tope'), cCom = cb('stkm-a-comodato'), cUni = cb('stkm-a-unidades');
+  // Control por unidad: se habilita en SEC-1a.3b
+  cUni.checked = false;
+  cUni.disabled = true;
+  if (cTope.checked) { cEnt.checked = true; cStock.checked = true; }
+  if (cCom.checked) cStock.checked = true;
+  cEnt.disabled = cTope.checked;
+  cStock.disabled = bloq || cTope.checked || cCom.checked;
+  cTope.disabled = bloq;
+  if (bloq) {
+    cStock.checked = stkForm.original.ControlaStock;
+    cTope.checked = stkForm.original.ControlaTopeDiabetes;
+    if (cTope.checked) { cEnt.checked = true; cEnt.disabled = true; }
   }
+  var inp = cb('stkm-texto');
+  inp.disabled = bloq || !cTope.checked;
+  if (!cTope.checked && !bloq) inp.value = '';
+  var permiteCampos = cEnt.checked || cCom.checked;
+  document.querySelectorAll('#stk-modal .stkm-campo').forEach(function(c) { c.disabled = !permiteCampos; if (!permiteCampos) c.checked = false; });
+
+  var partes = [];
+  if (!cStock.checked) partes.push('<div class="stk-aviso warn">No controla stock: no admite stock inicial, ingresos ni transferencias.</div>');
+  if (cTope.checked) {
+    var texto = inp.value;
+    if (!String(texto).trim()) partes.push('<div class="stk-aviso warn">Indicá el TextoEntregas.</div>');
+    else {
+      var c = stkCompatTopes(texto);
+      partes.push(c.tipo
+        ? '<div class="stk-aviso ok">✓ Sus entregas van a la hoja Entregas y en los topes contarán como <strong>' + stkEsc(c.tipo) + '</strong> · ' + (c.unidadesPorEnvase || 1) + ' unidad(es) por cada caja entregada.</div>'
+        : '<div class="stk-aviso bad">✗ El TextoEntregas debe ser reconocible por los topes actuales (debe contener "tira", "lanceta", "aguja" o "gluc").</div>');
+    }
+  } else if (cEnt.checked) {
+    partes.push('<div class="stk-aviso">Se entrega a personas, pero <strong>no escribe en la hoja Entregas ni afecta los topes de Diabetes</strong>. Sus entregas quedan en Stock (se habilitan en SEC-1a.3b).</div>');
+  } else {
+    partes.push('<div class="stk-aviso">No se entrega a personas: sus salidas (uso interno, a un médico, etc.) se registran como SALIDA (SEC-1a.3b).</div>');
+  }
+  if (cCom.checked) partes.push('<div class="stk-aviso">Permite comodato: se presta y vuelve (SEC-1a.3b).</div>');
+  el.innerHTML = partes.join('');
 }
 
 async function stkGuardarArticulo() {
   var f = stkForm;
+  function chk(id) { return stkChk(id); }
   var art = {
     ID: f.modo === 'alta' ? stkVal('stkm-id') : f.id,
     Nombre: stkVal('stkm-nombre'), Categoria: stkVal('stkm-categoria'),
     Unidad: f.bloqueado ? f.original.Unidad : stkVal('stkm-unidad'),
-    GeneraEntrega: f.bloqueado ? f.original.GeneraEntrega : stkChk('stkm-genera'),
+    ControlaStock: chk('stkm-a-stock'), GeneraEntrega: chk('stkm-a-entrega'), ControlaTopeDiabetes: chk('stkm-a-tope'),
+    PermiteComodato: chk('stkm-a-comodato'), ControlaUnidades: chk('stkm-a-unidades'),
+    CamposEntrega: [].slice.call(document.querySelectorAll('#stk-modal .stkm-campo')).filter(function(c) { return c.checked; }).map(function(c) { return c.value; }),
     TextoEntregas: f.bloqueado ? f.original.TextoEntregas : stkVal('stkm-texto'),
     Observacion: stkVal('stkm-observacion')
   };
@@ -1656,14 +1728,9 @@ async function stkGuardarArticulo() {
     payload.motivo = stkVal('stkm-motivo');
     if (!String(payload.motivo).trim()) { stkModalMsg('Indicá el motivo de la modificación.'); return; }
   }
-  if (document.getElementById('stkm-conf-adv')) {
-    if (!stkChk('stkm-conf-adv')) { stkModalMsg('Confirmá que el artículo debe contar para ese tope.'); return; }
-    payload.confirmaAdvertencia = true;
-  }
   var r = await stkEnviar('stk_guardarArticulo', payload);
   if (!r) return;
   if (r.ok) { await stkExito(f.modo === 'alta' ? 'Artículo creado: ' + r.id : 'Artículo actualizado'); return; }
-  if (r.code === 'CONFIRMAR') { stkArtPrevia(); stkModalMsg(r.msg); return; }
   stkModalMsg(r.msg || 'No se pudo guardar.');
 }
 
@@ -1713,7 +1780,7 @@ function stkAbrirMapeo(i) {
   var t = stkEstado.analisis.textosSinArticulo[i];
   if (!t) return;
   stkForm = { clase: 'mapeo', reqId: stkNuevoReqId(), texto: t.texto };
-  var arts = ((stkEstado.datos && stkEstado.datos.articulos) || []).filter(function(a) { return stkVerdadero(a.GeneraEntrega); })
+  var arts = ((stkEstado.datos && stkEstado.datos.articulos) || []).filter(function(a) { return stkVerdadero(a.ControlaTopeDiabetes); })
     .sort(function(x, y) { return (stkVerdadero(y.Activo) - stkVerdadero(x.Activo)) || (String(x.Nombre) < String(y.Nombre) ? -1 : 1); });
   var cuerpo = '<div class="stk-k">Texto histórico en Entregas</div><div class="stk-aviso">' + stkEsc(t.texto) +
     ' <span class="stk-dim">· ' + t.desde + ' fila(s) desde el corte · ' + t.total + ' en total</span></div>' +
