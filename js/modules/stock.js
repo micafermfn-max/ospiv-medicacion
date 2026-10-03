@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════════════
-// 🏬 STOCK Y MOVIMIENTOS — SEC-1a.2 (SOLO LECTURA) · ajuste: artículos por ArticuloID
+// 🏬 STOCK Y MOVIMIENTOS — SEC-1a.2 (lectura) + SEC-1a.3a (catálogo, mapeos y operaciones)
 // ----------------------------------------------------------------------
 // Módulo independiente. No modifica DB, allData, localStorage ni la hoja
 // Entregas. Solo llama a acciones del servidor que empiezan con "stk_".
@@ -191,14 +191,17 @@ async function cargarStkDatos() {
   stkEstado.cargando = true; stkEstado.error = '';
   renderStkPage();
   try {
-    var r = await stkApi('stk_getData');
-    if (r.code === 'SESION_INVALIDA') {
+    var res = await Promise.all([stkApi('stk_getData'), stkCargarMovs()]);   // SEC-1a.3a: + movimientos
+    var r = res[0], rm = res[1];
+    if (r.code === 'SESION_INVALIDA' || rm.code === 'SESION_INVALIDA') {
       stkEstado.datos = null; stkEstado.analisis = null;
       stkEstado.aviso = r.msg || 'Sesión vencida. Ingresá nuevamente la clave de Stock.';
     } else if (r.code === 'ACCION_DESCONOCIDA' || (r.ok && (!r.config || !r.entregas || !r.articulos))) {
       stkEstado.error = 'El servidor no tiene instalado SEC-1a.2 (falta la acción stk_getData). Actualizá el Code.gs y publicá una nueva versión.';
     } else if (!r.ok) {
       stkEstado.error = r.msg || 'No se pudieron leer los datos de Stock.';
+    } else if (!rm.ok) {
+      stkEstado.error = rm.msg || 'No se pudieron leer los movimientos de Stock.';
     } else {
       stkEstado.datos = r;
       stkEstado.analisis = stkAnalizar(r);
@@ -403,7 +406,7 @@ function renderStkPage() {
     '<span class="b bg">🔓 Sesión de Stock activa</span>' +
     '<span class="stk-dim">vence a las ' + hhmm + '</span>' +
     '<span style="flex:1"></span>' +
-    '<span class="b bgr">Solo lectura · SEC-1a.2</span>' +
+    '<span class="b bgr">SEC-1a.3a</span>' +
     '<button class="btn bs bsm" onclick="cargarStkDatos()"' + (stkEstado.cargando ? ' disabled' : '') + '>🔄 Actualizar</button>' +
     '<button class="btn bs bsm" onclick="stkLogout()">Cerrar sesión</button>' +
     '</div>';
@@ -421,12 +424,17 @@ function renderStkPage() {
   var a = stkEstado.analisis;
   html += '<div class="stk-tabs">' +
     '<button class="stk-tab' + (stkEstado.tab === 'resumen' ? ' active' : '') + '" onclick="stkTab(\'resumen\')">📌 Resumen</button>' +
+    '<button class="stk-tab' + (stkEstado.tab === 'stock' ? ' active' : '') + '" onclick="stkTab(\'stock\')">📦 Stock</button>' +
+    '<button class="stk-tab' + (stkEstado.tab === 'movimientos' ? ' active' : '') + '" onclick="stkTab(\'movimientos\')">🔁 Movimientos</button>' +
+    '<button class="stk-tab' + (stkEstado.tab === 'catalogo' ? ' active' : '') + '" onclick="stkTab(\'catalogo\')">🗂 Catálogo</button>' +
     '<button class="stk-tab' + (stkEstado.tab === 'entregas' ? ' active' : '') + '" onclick="stkTab(\'entregas\')">📋 Entregas desde el corte' +
       (a && a.conteo.SIN_CLASIFICAR ? ' <span class="b br">' + a.conteo.SIN_CLASIFICAR + '</span>' : '') + '</button>' +
     '</div><div id="stk-contenido"></div>';
   el.innerHTML = html;
   var c = document.getElementById('stk-contenido');
-  if (stkEstado.tab === 'entregas') renderStkEntregas(c); else renderStkResumen(c);
+  if (stkEstado.tab === 'entregas') renderStkEntregas(c);
+  else if (stkEstado.tab === 'stock' || stkEstado.tab === 'movimientos' || stkEstado.tab === 'catalogo') renderStkNuevaSolapa(c);   // SEC-1a.3a
+  else renderStkResumen(c);
 }
 
 function renderStkLogin(el) {
@@ -486,7 +494,7 @@ function renderStkResumen(c) {
     '</div>' +
     (cfg.avisoFechaCorte ? '<div class="stk-aviso warn">⚠ ' + stkEsc(cfg.avisoFechaCorte) + '</div>' : '') +
     (cfg.fechaCorte !== STK_CORTE_ESPERADO ? '<div class="stk-aviso bad">⚠ El servidor informa una fecha de corte distinta de ' + stkFmtFecha(STK_CORTE_ESPERADO) + '.</div>' : '') +
-    '<div class="stk-aviso">🔒 El cálculo de stock y la carga de movimientos se habilitan en SEC-1a.3a. Esta pantalla es solo de lectura.</div>' +
+    '<div class="stk-aviso">📦 El saldo por movimientos se consulta en la solapa Stock y las operaciones se cargan en Movimientos. Las entregas a afiliados todavía no descuentan stock (SEC-1a.4).</div>' +
     '</div></div>';
 
   // Ubicaciones
@@ -538,7 +546,7 @@ function renderStkResumen(c) {
              : '<span class="b br">⚠ ArticuloID inexistente: ' + stkEsc(m.ArticuloID || '(vacío)') + '</span>') + '</td><td>' +
         (stkVerdadero(m.Activo) ? '<span class="b bg">Sí</span>' : '<span class="b bgr">No</span>') + '</td><td class="stk-dim">' +
         stkEsc(m.Observacion || '') + '</td></tr>';
-    }).join('') : '<tr><td colspan="4" class="stk-dim" style="text-align:center">Sin mapeos. La carga de mapeos se habilita en SEC-1a.3a.</td></tr>') +
+    }).join('') : '<tr><td colspan="4" class="stk-dim" style="text-align:center">Sin mapeos. Los mapeos se cargan en la solapa 🗂 Catálogo.</td></tr>') +
     '</tbody></table></div></div>';
 
   c.innerHTML = h;
@@ -589,7 +597,7 @@ function renderStkEntregas(c) {
   // Textos históricos sin artículo
   var tsa = a.textosSinArticulo;
   h += '<div class="card"><div class="ch">❓ <span class="ct">Textos históricos sin artículo</span><span class="stk-dim">' + tsa.length +
-    ' texto(s) distinto(s) · se resolverán con mapeos en SEC-1a.3a</span></div><div class="cb tw">' +
+    ' texto(s) distinto(s) · se mapean en la solapa 🗂 Catálogo</span></div><div class="cb tw">' +
     (tsa.length ? '<table><thead><tr><th>Texto en Entregas</th><th>Filas desde el corte</th><th>Filas en total</th><th>Motivo</th><th></th></tr></thead><tbody>' +
       tsa.map(function(t, i) {
         return '<tr><td>' + stkEsc(t.texto) + '</td><td class="mono" style="font-weight:600">' + t.desde + '</td><td class="mono">' + t.total +
@@ -732,4 +740,1017 @@ function stkExportarCSV() {
   document.body.appendChild(a);
   a.click();
   setTimeout(function() { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// SEC-1a.3a · CATÁLOGO · MAPEOS · STOCK INICIAL · INGRESOS · TRANSFERENCIAS
+// ----------------------------------------------------------------------
+// · "Saldo por movimientos": las Entregas NO descuentan stock hasta SEC-1a.4.
+// · Los artículos se eligen SIEMPRE de un selector (nunca texto libre).
+// · Toda escritura lleva ReqId; el servidor valida todo y audita.
+// ══════════════════════════════════════════════════════════════════════
+
+var STK_NOMBRES_TIPO = { STOCK_INICIAL: 'Stock inicial', INGRESO: 'Ingreso', TRANSFERENCIA: 'Transferencia' };
+var STK_PREFIJOS = { DIABETES: 'DB-', MATERIAL: 'MAT-', ADMINISTRATIVO: 'ADM-', EQUIPAMIENTO: 'EQ-', OTRO: 'OTR-' };
+var STK_MAX_OPS_LISTA = 300;
+
+stkEstado.movs = [];
+stkEstado.hoy = '';
+stkEstado.ficha = null;
+stkEstado.fichaFecha = '';
+stkEstado.fichaArt = '';
+stkEstado.stockCat = '';
+stkEstado.stockTodas = false;
+stkEstado.filtrosMov = { tipo: '', ubic: '', art: '', mes: '', estado: 'ACTIVO' };
+stkEstado.opsAbiertas = {};
+var stkRefs = [];
+var stkForm = null;
+
+function stkRef(v) { stkRefs.push(v); return stkRefs.length - 1; }
+
+function stkNuevoReqId() {
+  return 'r' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+function stkAviso(msg, tipo) {
+  if (typeof toast === 'function') { try { toast(msg, tipo || 'ok'); return; } catch (e) {} }
+}
+
+// ── Estilos propios de 1a.3a (inyectados: index.html no se modifica) ───
+(function stkInyectarEstilos() {
+  if (typeof document === 'undefined' || document.getElementById('stk-estilos-1a3a')) return;
+  var st = document.createElement('style');
+  st.id = 'stk-estilos-1a3a';
+  st.textContent = [
+    '#page-stock .stk-num{text-align:right;font-family:"DM Mono",monospace;white-space:nowrap}',
+    '#page-stock .stk-neg{color:var(--rd);font-weight:700}',
+    '#page-stock .stk-cero{color:var(--tx3)}',
+    '#page-stock .stk-acciones{display:flex;gap:6px;flex-wrap:wrap;align-items:center}',
+    '#page-stock .stk-op-det td{background:var(--sf2);font-size:12px}',
+    '#page-stock .stk-anulada td{opacity:.55}',
+    '#page-stock .stk-enlace{background:none;border:none;color:var(--ac);cursor:pointer;font:inherit;font-weight:600;padding:0}',
+    '#page-stock .stk-sel-in{background:var(--sf2);border:1px solid var(--bd2);border-radius:7px;padding:6px 10px;color:var(--tx);font-size:12px;width:auto;height:auto}',
+    '#stk-modal .md{max-width:880px}',
+    '#stk-modal .stk-k{font-size:10px;font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}',
+    '#stk-modal .stk-dim{color:var(--tx3);font-size:11.5px}',
+    '#stk-modal .stk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:14px}',
+    '#stk-modal .stk-in{background:var(--sf2);border:1px solid var(--bd2);border-radius:7px;padding:7px 10px;color:var(--tx);font-size:13px;width:100%;height:auto;font-family:"DM Sans",sans-serif;box-sizing:border-box}',
+    '#stk-modal .stk-in:disabled{opacity:.55}',
+    '#stk-modal .stk-in.stk-num{text-align:right;font-family:"DM Mono",monospace}',
+    '#stk-modal .stk-aviso{background:var(--sf2);border:1px solid var(--bd2);border-radius:8px;padding:9px 12px;font-size:12.5px;color:var(--tx2);line-height:1.55;margin-bottom:12px}',
+    '#stk-modal .stk-aviso.warn{background:var(--orb);border-color:rgba(243,156,18,.35);color:var(--or)}',
+    '#stk-modal .stk-aviso.bad{background:var(--rdb);border-color:rgba(231,76,60,.35);color:var(--rd)}',
+    '#stk-modal .stk-aviso.ok{background:var(--gnb);border-color:var(--gnbd);color:var(--gn)}',
+    '#stk-modal .stk-lineas td,#stk-modal .stk-lineas th{padding:5px 6px;vertical-align:middle}',
+    '#stk-modal .stk-check{display:inline-flex;align-items:center;gap:6px;margin:0;font-size:12.5px;color:var(--tx);text-transform:none;letter-spacing:0;font-weight:500;cursor:pointer}',
+    '#stk-modal .stk-check input{width:auto;height:auto}',
+    '#stk-modal .stk-msg{min-height:18px;font-size:12.5px;margin-top:6px}'
+  ].join('\n');
+  document.head.appendChild(st);
+})();
+
+// ── Datos derivados ───────────────────────────────────────────────────
+function stkArtMap() {
+  var m = {};
+  ((stkEstado.datos && stkEstado.datos.articulos) || []).forEach(function(a) { m[stkCampo(a, 'ID')] = a; });
+  return m;
+}
+
+function stkUbicMap() {
+  var m = {};
+  ((stkEstado.datos && stkEstado.datos.ubicaciones) || []).forEach(function(u) { m[stkCampo(u, 'ID')] = u; });
+  return m;
+}
+
+function stkNombreUbic(id) {
+  var u = stkUbicMap()[id];
+  return u ? stkCampo(u, 'Nombre') || id : (id || '—');
+}
+
+function stkUbicacionesActivas() {
+  return ((stkEstado.datos && stkEstado.datos.ubicaciones) || []).filter(function(u) { return stkVerdadero(u.Activa); });
+}
+
+function stkArticulosActivos() {
+  return ((stkEstado.datos && stkEstado.datos.articulos) || []).filter(function(a) { return stkVerdadero(a.Activo); });
+}
+
+function stkCant(n, art) {
+  var u = art ? stkCampo(art, 'Unidad') : '';
+  return (Number(n) || 0).toLocaleString('es-AR') + (u ? ' ' + u : '');
+}
+
+function stkEsActivo(m) { return String(m.Estado) !== 'ANULADO'; }
+
+// Saldo[ubicación][artículo] con movimientos activos hasta "hasta" (inclusive; vacío = todos)
+function stkSaldos(hasta) {
+  var s = {};
+  stkEstado.movs.forEach(function(m) {
+    if (!stkEsActivo(m) || (hasta && String(m.Fecha) > hasta)) return;
+    var a = stkCampo(m, 'ArticuloID'), c = Number(m.Cantidad) || 0;
+    var d = stkCampo(m, 'Destino'), o = stkCampo(m, 'Origen');
+    if (d) { s[d] = s[d] || {}; s[d][a] = (s[d][a] || 0) + c; }
+    if (o) { s[o] = s[o] || {}; s[o][a] = (s[o][a] || 0) - c; }
+  });
+  return s;
+}
+
+// MISMA regla que stkVerificarSaldos del servidor
+function stkVerificarSaldosCli(movs, cambios) {
+  var porPar = {};
+  cambios.forEach(function(c) {
+    if (c.delta >= 0) return;
+    var k = c.ubicacion + '|' + c.articuloId;
+    if (!porPar[k] || c.fecha < porPar[k]) porPar[k] = c.fecha;
+  });
+  var faltantes = [];
+  Object.keys(porPar).forEach(function(k) {
+    var p = k.split('|'), u = p[0], a = p[1], desde = porPar[k], porFecha = {};
+    function sumar(f, v) { porFecha[f] = (porFecha[f] || 0) + v; }
+    movs.forEach(function(m) {
+      if (!stkEsActivo(m) || stkCampo(m, 'ArticuloID') !== a) return;
+      var cant = Number(m.Cantidad) || 0, f = String(m.Fecha);
+      if (stkCampo(m, 'Destino') === u) sumar(f, cant);
+      if (stkCampo(m, 'Origen') === u) sumar(f, -cant);
+    });
+    cambios.forEach(function(c) { if (c.ubicacion === u && c.articuloId === a) sumar(c.fecha, c.delta); });
+    var saldo = 0, minimo = null, fechaMin = '';
+    Object.keys(porFecha).sort().forEach(function(f) {
+      saldo += porFecha[f];
+      if (f >= desde && (minimo === null || saldo < minimo)) { minimo = saldo; fechaMin = f; }
+    });
+    if (minimo !== null && minimo < 0) faltantes.push({ ubicacion: u, articuloId: a, fecha: fechaMin, saldoMinimo: minimo });
+  });
+  return faltantes;
+}
+
+function stkOperaciones() {
+  var ops = {}, orden = [];
+  stkEstado.movs.forEach(function(m) {
+    var id = stkCampo(m, 'OperacionID') || stkCampo(m, 'ID');
+    if (!ops[id]) {
+      ops[id] = { id: id, tipo: stkCampo(m, 'Tipo'), fecha: stkCampo(m, 'Fecha'), origen: stkCampo(m, 'Origen'),
+                  destino: stkCampo(m, 'Destino'), proveedor: stkCampo(m, 'Proveedor'), comprobante: stkCampo(m, 'Comprobante'),
+                  observacion: stkCampo(m, 'Observacion'), creadoEn: stkCampo(m, 'CreadoEn'), modificadoEn: stkCampo(m, 'ModificadoEn'),
+                  activa: false, lineas: [] };
+      orden.push(id);
+    }
+    ops[id].lineas.push(m);
+    if (stkEsActivo(m)) ops[id].activa = true;
+  });
+  return orden.map(function(id) { return ops[id]; })
+    .sort(function(a, b) { return a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : (a.creadoEn < b.creadoEn ? 1 : -1); });
+}
+
+function stkResumenLineas(op, max) {
+  var arts = stkArtMap();
+  var partes = op.lineas.map(function(l) {
+    var a = arts[stkCampo(l, 'ArticuloID')];
+    return (a ? stkCampo(a, 'Nombre') : stkCampo(l, 'ArticuloID')) + ' × ' + stkCant(l.Cantidad, a);
+  });
+  var max2 = max || 3;
+  return partes.slice(0, max2).join(' · ') + (partes.length > max2 ? ' · y ' + (partes.length - max2) + ' más' : '');
+}
+
+// Uso de un artículo (aproximación de pantalla; el servidor decide)
+function stkUsoCliente(id) {
+  var uso = { movimientos: 0, entregas: 0, mapeos: 0 };
+  stkEstado.movs.forEach(function(m) { if (stkCampo(m, 'ArticuloID') === id) uso.movimientos++; });
+  ((stkEstado.datos && stkEstado.datos.mapeos) || []).forEach(function(m) { if (stkCampo(m, 'ArticuloID') === id) uso.mapeos++; });
+  var R = stkEstado.analisis && stkEstado.analisis.resolutor;
+  if (R) {
+    ((stkEstado.datos.entregas && stkEstado.datos.entregas.filas) || []).forEach(function(f) {
+      var r = stkResolverArticulo(f, R);
+      if (r.articulo && stkCampo(r.articulo, 'ID') === id) uso.entregas++;
+    });
+  }
+  uso.total = uso.movimientos + uso.entregas + uso.mapeos;
+  return uso;
+}
+
+// Compatibilidad con los topes actuales (usa las funciones existentes solo para leer)
+function stkCompatTopes(texto) {
+  var tipo = (typeof getTipoInsumo === 'function') ? getTipoInsumo(texto) : null;
+  var u = (typeof cajasAUnidadesSec === 'function') ? cajasAUnidadesSec(texto, 1) : null;
+  return { tipo: tipo, unidadesPorEnvase: u };
+}
+
+// ── Carga de movimientos (complementa stk_getData) ─────────────────────
+async function stkCargarMovs() {
+  var r = await stkApi('stk_getMovs');
+  if (r.code === 'SESION_INVALIDA') return r;
+  if (r.code === 'ACCION_DESCONOCIDA' || (r.ok && !Array.isArray(r.movimientos)))
+    return { ok: false, msg: 'El servidor no tiene instalado SEC-1a.3a (falta la acción stk_getMovs). Actualizá el Code.gs y publicá una nueva versión.' };
+  if (r.ok) { stkEstado.movs = r.movimientos; stkEstado.hoy = r.hoy || ''; }
+  return r;
+}
+
+// ── Router de solapas nuevas ──────────────────────────────────────────
+function renderStkNuevaSolapa(c) {
+  stkRefs = [];
+  if (stkEstado.tab === 'stock') { if (stkEstado.ficha) renderStkFicha(c); else renderStkStock(c); }
+  else if (stkEstado.tab === 'movimientos') renderStkMovimientos(c);
+  else if (stkEstado.tab === 'catalogo') renderStkCatalogo(c);
+}
+
+function stkBannerSaldo() {
+  return '<div class="stk-aviso warn">⚠ <strong>Saldo por movimientos</strong>: stock inicial + ingresos ± transferencias. ' +
+    'Todavía <strong>no descuenta las entregas a afiliados</strong> (se habilita en SEC-1a.4), así que no es el stock definitivo.</div>';
+}
+
+// ── Solapa STOCK ──────────────────────────────────────────────────────
+function renderStkStock(c) {
+  var arts = stkArtMap();
+  var saldos = stkSaldos('');
+  var ubics = ((stkEstado.datos && stkEstado.datos.ubicaciones) || []).filter(function(u) {
+    return stkEstado.stockTodas ? stkVerdadero(u.Activa) || saldos[stkCampo(u, 'ID')] : !!saldos[stkCampo(u, 'ID')];
+  });
+  var conMov = {};
+  Object.keys(saldos).forEach(function(u) { Object.keys(saldos[u]).forEach(function(a) { conMov[a] = true; }); });
+  var lista = ((stkEstado.datos && stkEstado.datos.articulos) || []).filter(function(a) {
+    var id = stkCampo(a, 'ID');
+    if (stkEstado.stockCat && String(a.Categoria) !== stkEstado.stockCat) return false;
+    return conMov[id] || (stkEstado.stockTodas && stkVerdadero(a.Activo));
+  });
+  var cats = {};
+  lista.forEach(function(a) { var k = String(a.Categoria || 'OTRO'); (cats[k] = cats[k] || []).push(a); });
+  var orden = STK_ORDEN_CATEGORIAS.filter(function(k) { return cats[k]; }).concat(Object.keys(cats).filter(function(k) { return STK_ORDEN_CATEGORIAS.indexOf(k) < 0; }));
+
+  var h = stkBannerSaldo();
+  h += '<div class="stk-filtros">' +
+    '<select class="stk-sel-in" onchange="stkEstado.stockCat=this.value;renderStkPage()">' + stkOpt('', 'Todas las categorías', stkEstado.stockCat) +
+      ((stkEstado.datos && stkEstado.datos.categorias) || STK_ORDEN_CATEGORIAS).map(function(k) { return stkOpt(k, k, stkEstado.stockCat); }).join('') + '</select>' +
+    '<label class="stk-check"><input type="checkbox" ' + (stkEstado.stockTodas ? 'checked ' : '') +
+      'onchange="stkEstado.stockTodas=this.checked;renderStkPage()"> Mostrar todas las ubicaciones y artículos activos</label>' +
+    '</div>';
+  h += '<div class="card"><div class="ch">📍 <span class="ct">Fichas de ubicación</span></div><div class="stk-body stk-acciones">' +
+    stkUbicacionesActivas().map(function(u) {
+      return '<button class="btn bs bsm" onclick="stkAbrirFicha(stkRefs[' + stkRef(stkCampo(u, 'ID')) + '])">' + stkEsc(stkCampo(u, 'Nombre')) + '</button>';
+    }).join('') + '</div></div>';
+
+  if (!lista.length || !ubics.length) {
+    h += '<div class="card"><div class="stk-vacio">Todavía no hay movimientos. Cargá el stock inicial, ingresos o transferencias en la solapa 🔁 Movimientos.</div></div>';
+    c.innerHTML = h; return;
+  }
+  h += '<div class="card"><div class="ch">📦 <span class="ct">Saldo por movimientos · artículo × ubicación</span></div><div class="cb tw"><table>' +
+    '<thead><tr><th>Artículo</th><th>Unidad</th>' + ubics.map(function(u) {
+      return '<th class="stk-num"><button class="stk-enlace" title="Abrir ficha" onclick="stkAbrirFicha(stkRefs[' + stkRef(stkCampo(u, 'ID')) + '])">' + stkEsc(stkCampo(u, 'Nombre')) + '</button></th>';
+    }).join('') + '<th class="stk-num">Total</th></tr></thead><tbody>' +
+    orden.map(function(k) {
+      return '<tr class="stk-grupo"><td colspan="' + (ubics.length + 3) + '">' + stkEsc(k) + '</td></tr>' +
+        cats[k].map(function(a) {
+          var id = stkCampo(a, 'ID'), tot = 0;
+          var celdas = ubics.map(function(u) {
+            var v = (saldos[stkCampo(u, 'ID')] || {})[id] || 0; tot += v;
+            return '<td class="stk-num ' + (v < 0 ? 'stk-neg' : v === 0 ? 'stk-cero' : '') + '">' + v.toLocaleString('es-AR') + '</td>';
+          }).join('');
+          return '<tr><td>' + stkEsc(a.Nombre) + (stkVerdadero(a.Activo) ? '' : ' <span class="b bgr">inactivo</span>') +
+            '<div class="mono stk-dim">' + stkEsc(id) + '</div></td><td>' + stkEsc(a.Unidad) + '</td>' + celdas +
+            '<td class="stk-num ' + (tot < 0 ? 'stk-neg' : '') + '" style="font-weight:700">' + tot.toLocaleString('es-AR') + '</td></tr>';
+        }).join('');
+    }).join('') + '</tbody></table></div></div>';
+  c.innerHTML = h;
+}
+
+function stkAbrirFicha(id) {
+  stkEstado.ficha = id; stkEstado.fichaFecha = ''; stkEstado.fichaArt = '';
+  stkEstado.tab = 'stock';
+  renderStkPage();
+}
+
+// ── Ficha de ubicación ────────────────────────────────────────────────
+function renderStkFicha(c) {
+  var U = stkEstado.ficha, arts = stkArtMap();
+  var hasta = stkEstado.fichaFecha || '';
+  var saldos = stkSaldos(hasta)[U] || {};
+  var ops = stkOperaciones().filter(function(op) { return op.activa && (!hasta || op.fecha <= hasta); });
+  var hoy = stkEstado.hoy || '';
+
+  var h = '<div class="stk-filtros">' +
+    '<button class="btn bs bsm" onclick="stkEstado.ficha=null;renderStkPage()">← Volver al stock</button>' +
+    '<span class="ct" style="font-size:16px;font-weight:700">' + stkEsc(stkNombreUbic(U)) + '</span>' +
+    '<span style="flex:1"></span><span class="stk-dim">Saldo al día</span>' +
+    '<input type="date" class="stk-sel-in" min="' + stkEsc(stkEstado.analisis.corte) + '"' + (hoy ? ' max="' + stkEsc(hoy) + '"' : '') +
+      ' value="' + stkEsc(hasta) + '" onchange="stkEstado.fichaFecha=this.value;renderStkPage()">' +
+    (hasta ? '<button class="btn bs bsm" onclick="stkEstado.fichaFecha=\'\';renderStkPage()">Hoy</button>' : '') +
+    '</div>' + stkBannerSaldo() +
+    (hasta ? '<div class="stk-aviso">Mostrando el saldo y los movimientos hasta el ' + stkFmtFecha(hasta) + ' inclusive.</div>' : '');
+
+  // Saldo por artículo
+  var ids = Object.keys(saldos);
+  var cats = {};
+  ids.forEach(function(id) { var a = arts[id]; var k = a ? String(a.Categoria) : 'OTRO'; (cats[k] = cats[k] || []).push(id); });
+  var orden = STK_ORDEN_CATEGORIAS.filter(function(k) { return cats[k]; }).concat(Object.keys(cats).filter(function(k) { return STK_ORDEN_CATEGORIAS.indexOf(k) < 0; }));
+  h += '<div class="card"><div class="ch">📦 <span class="ct">Saldo por artículo</span></div><div class="cb tw">' +
+    (ids.length ? '<table><thead><tr><th>Artículo</th><th class="stk-num">Saldo</th></tr></thead><tbody>' +
+      orden.map(function(k) {
+        return '<tr class="stk-grupo"><td colspan="2">' + stkEsc(k) + '</td></tr>' + cats[k].map(function(id) {
+          var a = arts[id], v = saldos[id];
+          return '<tr><td>' + stkEsc(a ? a.Nombre : id) + '<div class="mono stk-dim">' + stkEsc(id) + '</div></td>' +
+            '<td class="stk-num ' + (v < 0 ? 'stk-neg' : v === 0 ? 'stk-cero' : '') + '" style="font-weight:600">' + stkEsc(stkCant(v, a)) + '</td></tr>';
+        }).join('');
+      }).join('') + '</tbody></table>' : '<div class="stk-vacio">Sin movimientos en esta ubicación.</div>') + '</div></div>';
+
+  // Stock inicial
+  var si = ops.filter(function(op) { return op.tipo === 'STOCK_INICIAL' && op.destino === U; });
+  h += '<div class="card"><div class="ch">🏁 <span class="ct">Stock inicial al ' + stkFmtFecha(stkEstado.analisis.corte) + '</span></div><div class="cb tw">' +
+    (si.length ? stkTablaOps(si, U) : '<div class="stk-vacio">No declarado.</div>') + '</div></div>';
+  var ing = ops.filter(function(op) { return op.tipo === 'INGRESO' && op.destino === U; });
+  if (ing.length) h += '<div class="card"><div class="ch">🧾 <span class="ct">Ingresos / compras</span><span class="stk-dim">' + ing.length + '</span></div><div class="cb tw">' + stkTablaOps(ing, U) + '</div></div>';
+  var env = ops.filter(function(op) { return op.tipo === 'TRANSFERENCIA' && op.origen === U; });
+  var rec = ops.filter(function(op) { return op.tipo === 'TRANSFERENCIA' && op.destino === U; });
+  h += '<div class="card"><div class="ch">📤 <span class="ct">Transferencias enviadas</span><span class="stk-dim">' + env.length + '</span></div><div class="cb tw">' +
+    (env.length ? stkTablaOps(env, U) : '<div class="stk-vacio">Sin transferencias enviadas.</div>') + '</div></div>';
+  h += '<div class="card"><div class="ch">📥 <span class="ct">Transferencias recibidas</span><span class="stk-dim">' + rec.length + '</span></div><div class="cb tw">' +
+    (rec.length ? stkTablaOps(rec, U) : '<div class="stk-vacio">Sin transferencias recibidas.</div>') + '</div></div>';
+
+  // Kárdex
+  var conMovs = {};
+  stkEstado.movs.forEach(function(m) {
+    if (stkEsActivo(m) && (stkCampo(m, 'Origen') === U || stkCampo(m, 'Destino') === U)) conMovs[stkCampo(m, 'ArticuloID')] = true;
+  });
+  var opcK = Object.keys(conMovs).sort(function(x, y) { return String((arts[x] || {}).Nombre || x) < String((arts[y] || {}).Nombre || y) ? -1 : 1; });
+  if (stkEstado.fichaArt && !conMovs[stkEstado.fichaArt]) stkEstado.fichaArt = '';
+  if (!stkEstado.fichaArt && opcK.length) stkEstado.fichaArt = opcK[0];
+  h += '<div class="card"><div class="ch">📒 <span class="ct">Historial por artículo (kárdex)</span>' +
+    (opcK.length ? '<select class="stk-sel-in" style="margin-left:auto" onchange="stkEstado.fichaArt=this.value;renderStkPage()">' +
+      opcK.map(function(id) { return stkOpt(id, (arts[id] ? arts[id].Nombre : id), stkEstado.fichaArt); }).join('') + '</select>' : '') +
+    '</div><div class="cb tw">' + (opcK.length ? stkKardexHtml(U, stkEstado.fichaArt, hasta) : '<div class="stk-vacio">Sin movimientos.</div>') +
+    '<div class="stk-body stk-dim" style="margin:0">Las operaciones anuladas no se muestran en la ficha (ver 🔁 Movimientos).</div></div></div>';
+  c.innerHTML = h;
+}
+
+function stkTablaOps(ops, U) {
+  var arts = stkArtMap();
+  return '<table><thead><tr><th>Fecha</th><th>Detalle</th><th>Artículo</th><th class="stk-num">Cantidad</th><th>Operación</th></tr></thead><tbody>' +
+    ops.map(function(op) {
+      var det = op.tipo === 'TRANSFERENCIA' ? (op.origen === U ? '→ ' + stkNombreUbic(op.destino) : '← ' + stkNombreUbic(op.origen))
+              : op.tipo === 'INGRESO' ? [op.proveedor, op.comprobante].filter(Boolean).join(' · ') || '—' : (op.observacion || '—');
+      return op.lineas.filter(stkEsActivo).map(function(l, i) {
+        var a = arts[stkCampo(l, 'ArticuloID')];
+        return '<tr><td class="mono">' + (i ? '' : stkFmtFecha(op.fecha)) + '</td><td>' + (i ? '' : stkEsc(det)) + '</td><td>' +
+          stkEsc(a ? a.Nombre : l.ArticuloID) + '</td><td class="stk-num">' + stkEsc(stkCant(l.Cantidad, a)) + '</td><td class="mono stk-dim">' +
+          (i ? '' : stkEsc(op.id)) + '</td></tr>';
+      }).join('');
+    }).join('') + '</tbody></table>';
+}
+
+function stkKardexHtml(U, artId, hasta) {
+  var a = stkArtMap()[artId];
+  var filas = stkEstado.movs.filter(function(m) {
+    return stkEsActivo(m) && stkCampo(m, 'ArticuloID') === artId && (stkCampo(m, 'Origen') === U || stkCampo(m, 'Destino') === U) &&
+      (!hasta || String(m.Fecha) <= hasta);
+  }).sort(function(x, y) { return String(x.Fecha) < String(y.Fecha) ? -1 : String(x.Fecha) > String(y.Fecha) ? 1 : (String(x.CreadoEn) < String(y.CreadoEn) ? -1 : 1); });
+  var saldo = 0;
+  return '<table><thead><tr><th>Fecha</th><th>Tipo</th><th>Contraparte / detalle</th><th class="stk-num">Entrada</th><th class="stk-num">Salida</th><th class="stk-num">Saldo</th><th>Operación</th></tr></thead><tbody>' +
+    filas.map(function(m) {
+      var c = Number(m.Cantidad) || 0, entra = stkCampo(m, 'Destino') === U, sale = stkCampo(m, 'Origen') === U;
+      saldo += (entra ? c : 0) - (sale ? c : 0);
+      var contra = stkCampo(m, 'Tipo') === 'TRANSFERENCIA' ? (entra ? 'desde ' + stkNombreUbic(m.Origen) : 'hacia ' + stkNombreUbic(m.Destino))
+                 : stkCampo(m, 'Tipo') === 'INGRESO' ? [stkCampo(m, 'Proveedor'), stkCampo(m, 'Comprobante')].filter(Boolean).join(' · ') || '—'
+                 : stkCampo(m, 'Observacion') || '—';
+      return '<tr><td class="mono">' + stkFmtFecha(String(m.Fecha)) + '</td><td>' + stkEsc(STK_NOMBRES_TIPO[m.Tipo] || m.Tipo) + '</td><td>' + stkEsc(contra) +
+        '</td><td class="stk-num">' + (entra ? c.toLocaleString('es-AR') : '') + '</td><td class="stk-num">' + (sale ? c.toLocaleString('es-AR') : '') +
+        '</td><td class="stk-num ' + (saldo < 0 ? 'stk-neg' : '') + '" style="font-weight:600">' + saldo.toLocaleString('es-AR') + '</td><td class="mono stk-dim">' + stkEsc(m.OperacionID) + '</td></tr>';
+    }).join('') + '</tbody></table><div class="stk-body stk-dim" style="margin:0">Unidad: ' + stkEsc(a ? a.Unidad : '—') + '</div>';
+}
+
+// ── Solapa MOVIMIENTOS ────────────────────────────────────────────────
+function renderStkMovimientos(c) {
+  var f = stkEstado.filtrosMov, arts = stkArtMap();
+  var modo = stkEstado.datos.config && stkEstado.datos.config.modoCargaInicial;
+  var ops = stkOperaciones();
+  var meses = {};
+  ops.forEach(function(op) { if (op.fecha) meses[op.fecha.slice(0, 7)] = true; });
+  var filtradas = ops.filter(function(op) {
+    if (f.tipo && op.tipo !== f.tipo) return false;
+    if (f.ubic && op.origen !== f.ubic && op.destino !== f.ubic) return false;
+    if (f.art && !op.lineas.some(function(l) { return stkCampo(l, 'ArticuloID') === f.art; })) return false;
+    if (f.mes && op.fecha.slice(0, 7) !== f.mes) return false;
+    if (f.estado === 'ACTIVO' && !op.activa) return false;
+    if (f.estado === 'ANULADO' && op.activa) return false;
+    return true;
+  });
+  var h = '<div class="stk-filtros">' +
+    '<button class="btn bp bsm" ' + (modo ? '' : 'disabled title="Solo con el modo carga inicial activo" ') + 'onclick="stkAbrirOperacion(\'STOCK_INICIAL\')">+ Stock inicial</button>' +
+    '<button class="btn bp bsm" onclick="stkAbrirOperacion(\'INGRESO\')">+ Ingreso / compra</button>' +
+    '<button class="btn bp bsm" onclick="stkAbrirOperacion(\'TRANSFERENCIA\')">+ Transferencia</button>' +
+    '<span style="flex:1"></span>' +
+    (modo ? '<span class="b bo">Modo carga inicial activo</span>' : '<span class="b bg">Modo carga inicial inactivo</span>') + '</div>';
+  h += '<div class="stk-filtros">' +
+    '<select class="stk-sel-in" onchange="stkEstado.filtrosMov.tipo=this.value;renderStkPage()">' + stkOpt('', 'Todos los tipos', f.tipo) +
+      Object.keys(STK_NOMBRES_TIPO).map(function(t) { return stkOpt(t, STK_NOMBRES_TIPO[t], f.tipo); }).join('') + '</select>' +
+    '<select class="stk-sel-in" onchange="stkEstado.filtrosMov.ubic=this.value;renderStkPage()">' + stkOpt('', 'Todas las ubicaciones', f.ubic) +
+      ((stkEstado.datos.ubicaciones) || []).map(function(u) { return stkOpt(stkCampo(u, 'ID'), stkCampo(u, 'Nombre'), f.ubic); }).join('') + '</select>' +
+    '<select class="stk-sel-in" style="max-width:240px" onchange="stkEstado.filtrosMov.art=this.value;renderStkPage()">' + stkOpt('', 'Todos los artículos', f.art) +
+      ((stkEstado.datos.articulos) || []).map(function(a) { return stkOpt(stkCampo(a, 'ID'), stkCampo(a, 'Nombre'), f.art); }).join('') + '</select>' +
+    '<select class="stk-sel-in" onchange="stkEstado.filtrosMov.mes=this.value;renderStkPage()">' + stkOpt('', 'Todos los meses', f.mes) +
+      Object.keys(meses).sort().reverse().map(function(m) { return stkOpt(m, stkFmtMes(m), f.mes); }).join('') + '</select>' +
+    '<select class="stk-sel-in" onchange="stkEstado.filtrosMov.estado=this.value;renderStkPage()">' +
+      stkOpt('ACTIVO', 'Activas', f.estado) + stkOpt('ANULADO', 'Anuladas', f.estado) + stkOpt('', 'Todas', f.estado) + '</select>' +
+    '</div>';
+  var vis = filtradas.slice(0, STK_MAX_OPS_LISTA);
+  h += '<div class="card"><div class="ch">🔁 <span class="ct">Operaciones</span><span class="stk-dim">' + filtradas.length + ' de ' + ops.length + '</span></div><div class="cb tw">' +
+    (vis.length ? '<table><thead><tr><th>Fecha</th><th>Tipo</th><th>Recorrido</th><th>Artículos</th><th>Proveedor / comprobante</th><th>Estado</th><th></th></tr></thead><tbody>' +
+      vis.map(function(op) {
+        var abierta = !!stkEstado.opsAbiertas[op.id], ref = stkRef(op.id);
+        var rec = op.tipo === 'TRANSFERENCIA' ? stkNombreUbic(op.origen) + ' → ' + stkNombreUbic(op.destino) : '→ ' + stkNombreUbic(op.destino);
+        var fila = '<tr class="' + (op.activa ? '' : 'stk-anulada') + '"><td class="mono">' + stkFmtFecha(op.fecha) + '</td><td>' +
+          stkEsc(STK_NOMBRES_TIPO[op.tipo] || op.tipo) + '</td><td>' + stkEsc(rec) + '</td><td style="font-size:12px">' + stkEsc(stkResumenLineas(op, 3)) +
+          '</td><td class="stk-dim">' + stkEsc([op.proveedor, op.comprobante].filter(Boolean).join(' · ')) + '</td><td>' +
+          (op.activa ? '<span class="b bg">Activa</span>' : '<span class="b bgr">Anulada</span>') + '</td><td><div class="stk-acciones">' +
+          '<button class="btn bs bsm" onclick="stkToggleOp(stkRefs[' + ref + '])">' + (abierta ? 'Ocultar' : 'Ver') + '</button>' +
+          (op.activa ? '<button class="btn brd bsm" onclick="stkAbrirAnular(stkRefs[' + ref + '])">Anular</button>' : '') + '</div></td></tr>';
+        if (abierta) {
+          fila += '<tr class="stk-op-det"><td colspan="7"><table><thead><tr><th>Artículo</th><th class="stk-num">Cantidad</th>' +
+            (op.tipo === 'INGRESO' ? '<th class="stk-num">Precio unit.</th><th class="stk-num">Importe</th>' : '') + '<th>Estado</th><th>ID línea</th></tr></thead><tbody>' +
+            op.lineas.map(function(l) {
+              var a = arts[stkCampo(l, 'ArticuloID')];
+              return '<tr><td>' + stkEsc(a ? a.Nombre : l.ArticuloID) + '</td><td class="stk-num">' + stkEsc(stkCant(l.Cantidad, a)) + '</td>' +
+                (op.tipo === 'INGRESO' ? '<td class="stk-num">' + stkEsc(l.PrecioUnit === '' ? '—' : Number(l.PrecioUnit).toLocaleString('es-AR')) +
+                  '</td><td class="stk-num">' + stkEsc(l.Importe === '' ? '—' : Number(l.Importe).toLocaleString('es-AR')) + '</td>' : '') +
+                '<td>' + stkEsc(l.Estado) + '</td><td class="mono stk-dim">' + stkEsc(l.ID) + '</td></tr>';
+            }).join('') + '</tbody></table>' +
+            '<div class="stk-dim" style="margin-top:6px">Operación ' + stkEsc(op.id) + ' · creada ' + stkEsc(op.creadoEn) +
+            (op.observacion ? ' · Observación: ' + stkEsc(op.observacion) : '') + (op.activa ? '' : ' · anulada ' + stkEsc(op.modificadoEn)) + '</div></td></tr>';
+        }
+        return fila;
+      }).join('') + '</tbody></table>' : '<div class="stk-vacio">Sin operaciones para estos filtros.</div>') +
+    (filtradas.length > vis.length ? '<div class="stk-vacio">Se muestran ' + vis.length + ' de ' + filtradas.length + '. Usá los filtros.</div>' : '') +
+    '</div></div>';
+  c.innerHTML = h;
+}
+
+function stkToggleOp(id) {
+  stkEstado.opsAbiertas[id] = !stkEstado.opsAbiertas[id];
+  renderStkPage();
+}
+
+// ── Solapa CATÁLOGO (artículos + mapeos) ──────────────────────────────
+function renderStkCatalogo(c) {
+  var d = stkEstado.datos, a = stkEstado.analisis, R = a.resolutor;
+  var arts = (d.articulos || []).slice();
+  var cats = {};
+  arts.forEach(function(x) { var k = String(x.Categoria || 'OTRO'); (cats[k] = cats[k] || []).push(x); });
+  var orden = STK_ORDEN_CATEGORIAS.filter(function(k) { return cats[k]; }).concat(Object.keys(cats).filter(function(k) { return STK_ORDEN_CATEGORIAS.indexOf(k) < 0; }));
+  var h = '<div class="stk-filtros"><button class="btn bp bsm" onclick="stkAbrirArticulo(null)">+ Nuevo artículo</button>' +
+    '<span class="stk-dim">El ID no cambia nunca. Con uso, Unidad, Genera entrega y TextoEntregas quedan bloqueados.</span></div>';
+  h += '<div class="card"><div class="ch">🗂 <span class="ct">Artículos</span><span class="stk-dim">' + arts.length + '</span></div><div class="cb tw"><table>' +
+    '<thead><tr><th>ID</th><th>Nombre</th><th>Unidad</th><th>Genera entrega</th><th>TextoEntregas</th><th>Uso</th><th>Activo</th><th></th></tr></thead><tbody>' +
+    orden.map(function(k) {
+      return '<tr class="stk-grupo"><td colspan="8">' + stkEsc(k) + ' · ' + cats[k].length + '</td></tr>' + cats[k].map(function(x) {
+        var id = stkCampo(x, 'ID'), uso = stkUsoCliente(id), ref = stkRef(id), act = stkVerdadero(x.Activo);
+        return '<tr><td class="mono">' + stkEsc(id) + '</td><td>' + stkEsc(x.Nombre) + '</td><td>' + stkEsc(x.Unidad) + '</td><td>' +
+          (stkVerdadero(x.GeneraEntrega) ? '<span class="b bb">Sí</span>' : '<span class="b bgr">No</span>') + '</td><td class="stk-dim">' +
+          stkEsc(x.TextoEntregas || '—') + '</td><td class="stk-dim" style="font-size:11px">' +
+          (uso.total ? [uso.movimientos ? uso.movimientos + ' mov.' : '', uso.entregas ? uso.entregas + ' entregas' : '', uso.mapeos ? uso.mapeos + ' mapeos' : ''].filter(Boolean).join(' · ') : 'sin uso') +
+          '</td><td>' + (act ? '<span class="b bg">Sí</span>' : '<span class="b bgr">No</span>') + '</td><td><div class="stk-acciones">' +
+          '<button class="btn bs bsm" onclick="stkAbrirArticulo(stkRefs[' + ref + '])">Editar</button>' +
+          '<button class="btn ' + (act ? 'brd' : 'bgn') + ' bsm" onclick="stkAbrirActivoArticulo(stkRefs[' + ref + '],' + (act ? 'false' : 'true') + ')">' + (act ? 'Desactivar' : 'Activar') + '</button>' +
+          '</div></td></tr>';
+      }).join('');
+    }).join('') + '</tbody></table></div></div>';
+
+  var maps = d.mapeos || [];
+  h += '<div class="card"><div class="ch">🔗 <span class="ct">Mapeos de textos históricos</span><span class="stk-dim">Solo para Entregas históricas sin ArticuloID · nunca para cargas nuevas</span></div>' +
+    (R.avisosMapeo.length ? '<div class="stk-body">' + R.avisosMapeo.map(function(t) { return '<div class="stk-aviso warn">⚠ ' + stkEsc(t) + '</div>'; }).join('') + '</div>' : '') +
+    '<div class="cb tw"><table><thead><tr><th>Texto original</th><th>Artículo</th><th>Activo</th><th>Observación</th><th></th></tr></thead><tbody>' +
+    (maps.length ? maps.map(function(m) {
+      var art = R.arts[stkCampo(m, 'ArticuloID')], act = stkVerdadero(m.Activo), ref = stkRef(stkCampo(m, 'ID'));
+      return '<tr><td>' + stkEsc(m.TextoOriginal) + '</td><td>' + (art ? stkEsc(art.Nombre) + '<div class="mono stk-dim">' + stkEsc(art.ID) + '</div>'
+          : '<span class="b br">⚠ inexistente: ' + stkEsc(m.ArticuloID) + '</span>') + '</td><td>' +
+        (act ? '<span class="b bg">Sí</span>' : '<span class="b bgr">No</span>') + '</td><td class="stk-dim">' + stkEsc(m.Observacion || '') + '</td><td>' +
+        '<button class="btn ' + (act ? 'brd' : 'bgn') + ' bsm" onclick="stkAbrirActivoMapeo(stkRefs[' + ref + '],' + (act ? 'false' : 'true') + ')">' + (act ? 'Desactivar' : 'Activar') + '</button></td></tr>';
+    }).join('') : '<tr><td colspan="5" class="stk-dim" style="text-align:center">Sin mapeos.</td></tr>') + '</tbody></table></div></div>';
+
+  var tsa = a.textosSinArticulo;
+  h += '<div class="card"><div class="ch">❓ <span class="ct">Textos históricos sin artículo</span><span class="stk-dim">' + tsa.length + '</span></div><div class="cb tw">' +
+    (tsa.length ? '<table><thead><tr><th>Texto en Entregas</th><th class="stk-num">Desde el corte</th><th class="stk-num">Total</th><th>Motivo</th><th></th></tr></thead><tbody>' +
+      tsa.map(function(t, i) {
+        return '<tr><td>' + stkEsc(t.texto) + '</td><td class="stk-num">' + t.desde + '</td><td class="stk-num">' + t.total + '</td><td class="stk-dim">' +
+          stkEsc(t.motivo) + '</td><td><button class="btn bp bsm" onclick="stkAbrirMapeo(' + i + ')">Mapear</button></td></tr>';
+      }).join('') + '</tbody></table>' : '<div class="stk-vacio">✓ Todas las entregas tienen un artículo identificado.</div>') + '</div></div>';
+  c.innerHTML = h;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// MODAL GENÉRICO
+// ══════════════════════════════════════════════════════════════════════
+function stkModalAbrir(titulo, cuerpo, pie) {
+  var mo = document.getElementById('stk-modal');
+  if (!mo) {
+    mo = document.createElement('div');
+    mo.className = 'mo'; mo.id = 'stk-modal';
+    mo.innerHTML = '<div class="md wide"><div class="mh"><span class="mt" id="stkm-titulo"></span>' +
+      '<button class="btn bs bsm" onclick="stkModalCerrar()">✕</button></div><div class="mb" id="stkm-cuerpo"></div>' +
+      '<div class="mf" id="stkm-pie"></div></div>';
+    document.body.appendChild(mo);
+  }
+  document.getElementById('stkm-titulo').textContent = titulo;
+  document.getElementById('stkm-cuerpo').innerHTML = cuerpo;
+  document.getElementById('stkm-pie').innerHTML = pie + '';
+  mo.classList.add('open');
+}
+
+function stkModalCerrar() {
+  var mo = document.getElementById('stk-modal');
+  if (mo) mo.classList.remove('open');
+  stkForm = null;
+}
+
+function stkModalMsg(t, tipo) {
+  var el = document.getElementById('stkm-msg');
+  if (el) { el.style.color = tipo === 'ok' ? 'var(--gn)' : tipo === 'info' ? 'var(--tx2)' : 'var(--rd)'; el.textContent = t || ''; }
+}
+
+function stkModalOcupado(si) {
+  var b = document.getElementById('stkm-guardar');
+  if (b) { b.disabled = !!si; b.textContent = si ? 'Guardando…' : (b.getAttribute('data-txt') || 'Guardar'); }
+}
+
+function stkVal(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+function stkChk(id) { var el = document.getElementById(id); return !!(el && el.checked); }
+
+function stkPieGuardar(txt) {
+  return '<button class="btn bs" onclick="stkModalCerrar()">Cancelar</button>' +
+    '<button class="btn bp" id="stkm-guardar" data-txt="' + stkEsc(txt || 'Guardar') + '" onclick="stkGuardarModal()">' + stkEsc(txt || 'Guardar') + '</button>';
+}
+
+function stkGuardarModal() {
+  if (!stkForm) return;
+  if (stkForm.enviando) return;          // evita doble envío (doble clic)
+  var f = stkForm.clase === 'operacion' ? stkGuardarOperacion : stkForm.clase === 'articulo' ? stkGuardarArticulo
+        : stkForm.clase === 'activoArt' ? stkGuardarActivoArticulo : stkForm.clase === 'mapeo' ? stkGuardarMapeoForm
+        : stkForm.clase === 'activoMap' ? stkGuardarActivoMapeo : stkForm.clase === 'anular' ? stkGuardarAnular : null;
+  if (!f) return;
+  var form = stkForm;
+  form.enviando = true;
+  return Promise.resolve(f()).finally(function() { form.enviando = false; });
+}
+
+async function stkEnviar(accion, payload) {
+  stkModalOcupado(true); stkModalMsg('Guardando…', 'info');
+  try {
+    var r = await stkApi(accion, Object.assign({ reqId: stkForm.reqId }, payload));
+    if (r.code === 'SESION_INVALIDA') { stkModalCerrar(); stkEstado.datos = null; stkEstado.aviso = r.msg; renderStkPage(); return null; }
+    if (r.code === 'ACCION_DESCONOCIDA') { stkModalMsg('El servidor no tiene instalado SEC-1a.3a. Actualizá el Code.gs.'); return null; }
+    return r;
+  } catch (e) {
+    stkModalMsg(e.message || String(e)); return null;
+  } finally {
+    stkModalOcupado(false);
+  }
+}
+
+async function stkExito(msg) {
+  stkModalCerrar();
+  stkAviso(msg, 'ok');
+  await cargarStkDatos();
+}
+
+function stkConfirmacionHtml(texto, conMotivo) {
+  return '<div id="stkm-confirmar" class="stk-aviso bad">' + texto +
+    '<div style="margin-top:8px"><label class="stk-check"><input type="checkbox" id="stkm-conf-chk"> Confirmo y quiero continuar</label></div>' +
+    (conMotivo ? '<div style="margin-top:8px"><div class="stk-k">Motivo (obligatorio)</div><input class="stk-in" id="stkm-conf-motivo" maxlength="500"></div>' : '') +
+    '</div>';
+}
+
+function stkDetalleSaldos(det) {
+  var arts = stkArtMap();
+  return '<ul style="margin:6px 0 0 18px">' + det.map(function(x) {
+    var a = arts[x.articuloId];
+    return '<li>' + stkEsc(stkNombreUbic(x.ubicacion)) + ' · ' + stkEsc(a ? a.Nombre : x.articuloId) + ': el saldo llega a <strong>' +
+      (x.saldoMinimo).toLocaleString('es-AR') + '</strong> el ' + stkFmtFecha(x.fecha) + '</li>';
+  }).join('') + '</ul>';
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// FORMULARIO DE OPERACIÓN (encabezado una vez + líneas de artículos)
+// ══════════════════════════════════════════════════════════════════════
+function stkOpcionesArticulos(sel, excluir) {
+  var cats = {};
+  stkArticulosActivos().forEach(function(a) { var k = String(a.Categoria || 'OTRO'); (cats[k] = cats[k] || []).push(a); });
+  var orden = STK_ORDEN_CATEGORIAS.filter(function(k) { return cats[k]; }).concat(Object.keys(cats).filter(function(k) { return STK_ORDEN_CATEGORIAS.indexOf(k) < 0; }));
+  return '<option value="">— Elegí un artículo —</option>' + orden.map(function(k) {
+    return '<optgroup label="' + stkEsc(k) + '">' + cats[k].map(function(a) {
+      var id = stkCampo(a, 'ID');
+      return '<option value="' + stkEsc(id) + '"' + (id === sel ? ' selected' : '') + '>' + stkEsc(a.Nombre) + ' (' + stkEsc(a.Unidad) + ')</option>';
+    }).join('') + '</optgroup>';
+  }).join('');
+}
+
+function stkOpcionesUbic(sel, vacio) {
+  return (vacio ? '<option value="">— Elegí —</option>' : '') + stkUbicacionesActivas().map(function(u) {
+    var id = stkCampo(u, 'ID');
+    return '<option value="' + stkEsc(id) + '"' + (id === sel ? ' selected' : '') + '>' + stkEsc(u.Nombre) + '</option>';
+  }).join('');
+}
+
+function stkAbrirOperacion(tipo) {
+  var modo = stkEstado.datos.config && stkEstado.datos.config.modoCargaInicial;
+  if (tipo === 'STOCK_INICIAL' && !modo) { stkAviso('El stock inicial solo se carga con el modo carga inicial activo.', 'err'); return; }
+  var hoy = stkEstado.hoy || '';
+  stkForm = { clase: 'operacion', tipo: tipo, reqId: stkNuevoReqId(), lineas: [{ articuloId: '', cantidad: '', precioUnit: '', importe: '' }], confirmar: false };
+  var corte = stkEstado.analisis.corte;
+  var cab = '<div class="stk-grid">';
+  if (tipo === 'STOCK_INICIAL') {
+    cab += '<div><div class="stk-k">Ubicación</div><select class="stk-in" id="stkm-destino" onchange="stkRenderLineasSI()">' + stkOpcionesUbic('CENTRAL') + '</select></div>' +
+      '<div><div class="stk-k">Fecha</div><div class="stk-in" style="opacity:.8">' + stkFmtFecha(corte) + ' (fija)</div></div>';
+  } else {
+    cab += '<div><div class="stk-k">Fecha</div><input type="date" class="stk-in" id="stkm-fecha" min="' + stkEsc(corte) + '"' + (hoy ? ' max="' + stkEsc(hoy) + '"' : '') +
+      ' value="' + stkEsc(hoy) + '" onchange="stkRecalcularOperacion()"></div>';
+    if (tipo === 'TRANSFERENCIA')
+      cab += '<div><div class="stk-k">Origen</div><select class="stk-in" id="stkm-origen" onchange="stkRecalcularOperacion()">' + stkOpcionesUbic('CENTRAL') + '</select></div>';
+    cab += '<div><div class="stk-k">Destino</div><select class="stk-in" id="stkm-destino" onchange="stkRecalcularOperacion()">' +
+      stkOpcionesUbic(tipo === 'INGRESO' ? 'CENTRAL' : '', tipo === 'TRANSFERENCIA') + '</select></div>';
+    if (tipo === 'INGRESO') {
+      var provs = {};
+      stkEstado.movs.forEach(function(m) { var p = stkCampo(m, 'Proveedor'); if (p) provs[p] = true; });
+      cab += '<div><div class="stk-k">Proveedor</div><input class="stk-in" id="stkm-proveedor" list="stkm-provs" maxlength="120">' +
+        '<datalist id="stkm-provs">' + Object.keys(provs).sort().map(function(p) { return '<option value="' + stkEsc(p) + '">'; }).join('') + '</datalist></div>' +
+        '<div><div class="stk-k">Factura / remito (opcional)</div><input class="stk-in" id="stkm-comprobante" maxlength="120"></div>';
+    }
+  }
+  cab += '<div style="grid-column:1/-1"><div class="stk-k">Observación</div><input class="stk-in" id="stkm-obs" maxlength="500"' +
+    (tipo === 'STOCK_INICIAL' ? ' placeholder="Fuente: recuento físico, planilla de stock…"' : '') + '></div></div>';
+  var cuerpo = cab + '<div class="stk-k" style="margin-top:4px">Artículos</div><div id="stkm-lineas"></div>' +
+    (tipo === 'STOCK_INICIAL' ? '' : '<button class="btn bs bsm" style="margin-top:8px" onclick="stkAgregarLinea()">+ Agregar artículo</button>') +
+    '<div id="stkm-adv" style="margin-top:12px"></div><div id="stkm-msg" class="stk-msg"></div>';
+  stkModalAbrir('Nueva operación · ' + STK_NOMBRES_TIPO[tipo], cuerpo, stkPieGuardar('Guardar operación'));
+  if (tipo === 'STOCK_INICIAL') stkRenderLineasSI(); else stkRenderLineas();
+}
+
+// Stock inicial: un campo de cantidad por artículo activo
+function stkRenderLineasSI() {
+  var U = stkVal('stkm-destino'), arts = stkArticulosActivos();
+  var declarados = {};
+  stkEstado.movs.forEach(function(m) {
+    if (stkEsActivo(m) && stkCampo(m, 'Tipo') === 'STOCK_INICIAL' && stkCampo(m, 'Destino') === U)
+      declarados[stkCampo(m, 'ArticuloID')] = (declarados[stkCampo(m, 'ArticuloID')] || 0) + (Number(m.Cantidad) || 0);
+  });
+  var cats = {};
+  arts.forEach(function(a) { var k = String(a.Categoria || 'OTRO'); (cats[k] = cats[k] || []).push(a); });
+  var orden = STK_ORDEN_CATEGORIAS.filter(function(k) { return cats[k]; }).concat(Object.keys(cats).filter(function(k) { return STK_ORDEN_CATEGORIAS.indexOf(k) < 0; }));
+  document.getElementById('stkm-lineas').innerHTML = '<div class="tw"><table class="stk-lineas"><thead><tr><th>Artículo</th><th>Unidad</th><th style="width:150px">Cantidad</th></tr></thead><tbody>' +
+    orden.map(function(k) {
+      return '<tr class="stk-grupo"><td colspan="3" style="font-size:10.5px;font-weight:700;color:var(--ac)">' + stkEsc(k) + '</td></tr>' + cats[k].map(function(a) {
+        var id = stkCampo(a, 'ID'), ya = declarados[id];
+        return '<tr><td>' + stkEsc(a.Nombre) + '<div class="mono stk-dim">' + stkEsc(id) + '</div></td><td>' + stkEsc(a.Unidad) + '</td><td>' +
+          (ya !== undefined ? '<span class="stk-dim">Ya declarado: ' + ya.toLocaleString('es-AR') + '</span>'
+            : '<input class="stk-in stk-num stkm-si" data-art="' + stkEsc(id) + '" inputmode="numeric" placeholder="0">') + '</td></tr>';
+      }).join('');
+    }).join('') + '</tbody></table></div><div class="stk-dim" style="margin-top:6px">Solo se guardan las cantidades mayores a 0. Para corregir un stock inicial ya declarado, anulá esa operación y cargala de nuevo.</div>';
+}
+
+function stkRenderLineas() {
+  var tipo = stkForm.tipo;
+  document.getElementById('stkm-lineas').innerHTML = '<div class="tw"><table class="stk-lineas"><thead><tr><th>Artículo</th><th style="width:120px">Cantidad</th>' +
+    (tipo === 'INGRESO' ? '<th style="width:130px">Precio unit. (opc.)</th><th style="width:130px">Importe (opc.)</th>' : '') +
+    (tipo === 'TRANSFERENCIA' ? '<th style="width:170px">Disponible en origen</th>' : '') + '<th></th></tr></thead><tbody>' +
+    stkForm.lineas.map(function(l, i) {
+      return '<tr><td><select class="stk-in" onchange="stkLinea(' + i + ',\'articuloId\',this.value)">' + stkOpcionesArticulos(l.articuloId) + '</select></td>' +
+        '<td><input class="stk-in stk-num" inputmode="numeric" value="' + stkEsc(l.cantidad) + '" oninput="stkLinea(' + i + ',\'cantidad\',this.value)"></td>' +
+        (tipo === 'INGRESO' ? '<td><input class="stk-in stk-num" inputmode="decimal" value="' + stkEsc(l.precioUnit) + '" oninput="stkLinea(' + i + ',\'precioUnit\',this.value)"></td>' +
+          '<td><input class="stk-in stk-num" id="stkm-imp-' + i + '" inputmode="decimal" value="' + stkEsc(l.importe) + '" oninput="stkLinea(' + i + ',\'importe\',this.value)"' +
+          (String(l.precioUnit).trim() ? ' disabled' : '') + '></td>' : '') +
+        (tipo === 'TRANSFERENCIA' ? '<td class="stk-dim" id="stkm-disp-' + i + '"></td>' : '') +
+        '<td>' + (stkForm.lineas.length > 1 ? '<button class="btn bs bsm" title="Quitar" onclick="stkQuitarLinea(' + i + ')">✕</button>' : '') + '</td></tr>';
+    }).join('') + '</tbody></table></div>';
+  stkRecalcularOperacion();
+}
+
+function stkAgregarLinea() {
+  stkForm.lineas.push({ articuloId: '', cantidad: '', precioUnit: '', importe: '' });
+  stkRenderLineas();
+}
+
+function stkQuitarLinea(i) {
+  stkForm.lineas.splice(i, 1);
+  stkRenderLineas();
+}
+
+function stkNumeroAR(v) {
+  var s = String(v == null ? '' : v).trim().replace(/\s/g, '');
+  if (!s) return null;
+  if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.');
+  var n = Number(s);
+  return isFinite(n) ? n : NaN;
+}
+
+function stkLinea(i, campo, valor) {
+  var l = stkForm.lineas[i];
+  l[campo] = valor;
+  if (stkForm.tipo === 'INGRESO' && (campo === 'precioUnit' || campo === 'cantidad')) {
+    var imp = document.getElementById('stkm-imp-' + i), p = stkNumeroAR(l.precioUnit), c = Number(l.cantidad);
+    if (imp) {
+      imp.disabled = p !== null;
+      if (p !== null && !isNaN(p) && /^\d+$/.test(String(l.cantidad).trim())) { l.importe = String(Math.round(p * c * 100) / 100); imp.value = l.importe; }
+      else if (p !== null) { l.importe = ''; imp.value = ''; }
+    }
+  }
+  stkRecalcularOperacion();
+}
+
+function stkRecalcularOperacion() {
+  if (!stkForm || stkForm.clase !== 'operacion' || stkForm.tipo !== 'TRANSFERENCIA') return;
+  var fecha = stkVal('stkm-fecha'), origen = stkVal('stkm-origen');
+  var saldos = stkSaldos(fecha)[origen] || {}, arts = stkArtMap();
+  stkForm.lineas.forEach(function(l, i) {
+    var el = document.getElementById('stkm-disp-' + i);
+    if (el) el.textContent = l.articuloId ? stkCant(saldos[l.articuloId] || 0, arts[l.articuloId]) + (fecha ? ' al ' + stkFmtFecha(fecha) : '') : '';
+  });
+  var adv = document.getElementById('stkm-adv');
+  if (!adv) return;
+  var cambios = stkForm.lineas.filter(function(l) { return l.articuloId && /^\d+$/.test(String(l.cantidad).trim()) && Number(l.cantidad) > 0; })
+    .map(function(l) { return { ubicacion: origen, articuloId: l.articuloId, fecha: fecha, delta: -Number(l.cantidad) }; });
+  var det = (origen && fecha) ? stkVerificarSaldosCli(stkEstado.movs, cambios) : [];
+  var modo = stkEstado.datos.config && stkEstado.datos.config.modoCargaInicial;
+  stkForm.faltantes = det;
+  if (!det.length) { adv.innerHTML = ''; return; }
+  adv.innerHTML = modo
+    ? '<div class="stk-aviso warn">⚠ Saldo insuficiente en el origen. Con el <strong>modo carga inicial activo</strong> se registra igual y queda la advertencia en auditoría.' + stkDetalleSaldos(det) + '</div>'
+    : stkConfirmacionHtml('⚠ Saldo insuficiente en el origen.' + stkDetalleSaldos(det), true);
+}
+
+async function stkGuardarOperacion() {
+  var f = stkForm, tipo = f.tipo;
+  var enc = { destino: stkVal('stkm-destino'), observacion: stkVal('stkm-obs') };
+  var lineas = [];
+  if (tipo === 'STOCK_INICIAL') {
+    var malas = 0;
+    document.querySelectorAll('#stk-modal .stkm-si').forEach(function(inp) {
+      var v = String(inp.value).trim();
+      if (!v || v === '0') return;
+      if (!/^\d+$/.test(v)) { malas++; return; }
+      lineas.push({ articuloId: inp.getAttribute('data-art'), cantidad: Number(v) });
+    });
+    if (malas) { stkModalMsg('Las cantidades deben ser números enteros.'); return; }
+  } else {
+    enc.fecha = stkVal('stkm-fecha');
+    if (tipo === 'TRANSFERENCIA') enc.origen = stkVal('stkm-origen');
+    if (tipo === 'INGRESO') { enc.proveedor = stkVal('stkm-proveedor'); enc.comprobante = stkVal('stkm-comprobante'); }
+    if (!enc.fecha) { stkModalMsg('Indicá la fecha.'); return; }
+    if (tipo === 'TRANSFERENCIA' && enc.origen === enc.destino) { stkModalMsg('El origen y el destino deben ser distintos.'); return; }
+    var vistos = {};
+    for (var i = 0; i < f.lineas.length; i++) {
+      var l = f.lineas[i];
+      if (!l.articuloId && !String(l.cantidad).trim()) continue;
+      if (!l.articuloId) { stkModalMsg('Línea ' + (i + 1) + ': elegí el artículo.'); return; }
+      if (vistos[l.articuloId]) { stkModalMsg('Hay un artículo repetido. Sumá las cantidades en una sola línea.'); return; }
+      vistos[l.articuloId] = true;
+      if (!/^\d+$/.test(String(l.cantidad).trim()) || Number(l.cantidad) <= 0) { stkModalMsg('Línea ' + (i + 1) + ': la cantidad debe ser un entero mayor a 0.'); return; }
+      var lin = { articuloId: l.articuloId, cantidad: Number(l.cantidad) };
+      if (tipo === 'INGRESO') {
+        var p = stkNumeroAR(l.precioUnit), im = stkNumeroAR(l.importe);
+        if ((p !== null && (isNaN(p) || p < 0)) || (im !== null && (isNaN(im) || im < 0))) { stkModalMsg('Línea ' + (i + 1) + ': precio o importe inválido.'); return; }
+        if (p !== null) lin.precioUnit = p; else if (im !== null) lin.importe = im;
+      }
+      lineas.push(lin);
+    }
+  }
+  if (!enc.destino) { stkModalMsg('Indicá el destino.'); return; }
+  if (!lineas.length) { stkModalMsg('Cargá al menos un artículo con cantidad mayor a 0.'); return; }
+  var payload = { tipo: tipo, encabezado: enc, lineas: lineas };
+  if (document.getElementById('stkm-confirmar')) {
+    payload.confirmaStock = stkChk('stkm-conf-chk');
+    payload.motivoStock = stkVal('stkm-conf-motivo');
+    if (!payload.confirmaStock || !String(payload.motivoStock).trim()) { stkModalMsg('Para continuar con saldo insuficiente, confirmá e indicá el motivo.'); return; }
+  }
+  var r = await stkEnviar('stk_registrarOperacion', payload);
+  if (!r) return;
+  if (r.ok) {
+    await stkExito((r.repetido ? 'Operación ya registrada' : 'Operación registrada') + ' · ' + r.lineas + ' artículo(s)' +
+      (r.advertencias && r.advertencias.length ? ' · con advertencia de saldo' : ''));
+    return;
+  }
+  if (r.code === 'STOCK_INSUFICIENTE') {
+    document.getElementById('stkm-adv').innerHTML = stkConfirmacionHtml('⚠ ' + stkEsc(r.msg) + stkDetalleSaldos(r.detalle || []), true);
+    stkModalMsg('Revisá la advertencia de saldo.');
+    return;
+  }
+  stkModalMsg(r.msg || 'No se pudo guardar.');
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// ANULAR OPERACIÓN
+// ══════════════════════════════════════════════════════════════════════
+function stkAbrirAnular(opId) {
+  var op = stkOperaciones().filter(function(o) { return o.id === opId; })[0];
+  if (!op) return;
+  stkForm = { clase: 'anular', reqId: stkNuevoReqId(), operacionId: opId };
+  var cambios = [];
+  op.lineas.filter(stkEsActivo).forEach(function(m) {
+    var c = Number(m.Cantidad) || 0;
+    if (stkCampo(m, 'Destino')) cambios.push({ ubicacion: stkCampo(m, 'Destino'), articuloId: stkCampo(m, 'ArticuloID'), fecha: String(m.Fecha), delta: -c });
+    if (stkCampo(m, 'Origen')) cambios.push({ ubicacion: stkCampo(m, 'Origen'), articuloId: stkCampo(m, 'ArticuloID'), fecha: String(m.Fecha), delta: c });
+  });
+  var det = stkVerificarSaldosCli(stkEstado.movs, cambios);
+  var modo = stkEstado.datos.config && stkEstado.datos.config.modoCargaInicial;
+  var cuerpo = '<div class="stk-aviso">' + stkEsc(STK_NOMBRES_TIPO[op.tipo] || op.tipo) + ' del ' + stkFmtFecha(op.fecha) + ' · ' +
+    stkEsc(op.tipo === 'TRANSFERENCIA' ? stkNombreUbic(op.origen) + ' → ' + stkNombreUbic(op.destino) : '→ ' + stkNombreUbic(op.destino)) +
+    '<br>' + stkEsc(stkResumenLineas(op, 50)) + '</div>' +
+    '<div class="stk-aviso warn">La operación completa queda <strong>anulada</strong>: no se borra, deja de contar en los saldos y queda registrada en auditoría. Si fue un error de carga, después cargala de nuevo.</div>' +
+    (det.length ? (modo ? '<div class="stk-aviso warn">⚠ Al anular, algún saldo queda negativo (modo carga inicial: solo advertencia).' + stkDetalleSaldos(det) + '</div>'
+                        : stkConfirmacionHtml('⚠ Al anular, algún saldo queda negativo.' + stkDetalleSaldos(det), false)) : '') +
+    '<div class="stk-k">Motivo de la anulación (obligatorio)</div><input class="stk-in" id="stkm-motivo" maxlength="500"><div id="stkm-msg" class="stk-msg"></div>';
+  stkModalAbrir('Anular operación', cuerpo, stkPieGuardar('Anular operación'));
+}
+
+async function stkGuardarAnular() {
+  var motivo = String(stkVal('stkm-motivo')).trim();
+  if (!motivo) { stkModalMsg('Indicá el motivo.'); return; }
+  var payload = { operacionId: stkForm.operacionId, motivo: motivo };
+  if (document.getElementById('stkm-confirmar')) {
+    if (!stkChk('stkm-conf-chk')) { stkModalMsg('Confirmá para continuar.'); return; }
+    payload.confirmaStock = true;
+  }
+  var r = await stkEnviar('stk_anularOperacion', payload);
+  if (!r) return;
+  if (r.ok) { await stkExito('Operación anulada'); return; }
+  if (r.code === 'STOCK_INSUFICIENTE') {
+    var cuerpo = document.getElementById('stkm-cuerpo');
+    if (cuerpo && !document.getElementById('stkm-confirmar'))
+      cuerpo.insertAdjacentHTML('afterbegin', stkConfirmacionHtml('⚠ ' + stkEsc(r.msg) + stkDetalleSaldos(r.detalle || []), false));
+    stkModalMsg('Revisá la advertencia de saldo.');
+    return;
+  }
+  stkModalMsg(r.msg || 'No se pudo anular.');
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// ARTÍCULO: ALTA / EDICIÓN
+// ══════════════════════════════════════════════════════════════════════
+function stkAbrirArticulo(id) {
+  var d = stkEstado.datos, a = id ? stkArtMap()[id] : null;
+  var uso = a ? stkUsoCliente(id) : { total: 0 };
+  var bloq = !!(a && uso.total > 0);
+  stkForm = { clase: 'articulo', reqId: stkNuevoReqId(), modo: a ? 'edicion' : 'alta', id: id, bloqueado: bloq,
+              prefijoPrevio: '', original: a ? { Unidad: stkCampo(a, 'Unidad'), GeneraEntrega: stkVerdadero(a.GeneraEntrega), TextoEntregas: stkCampo(a, 'TextoEntregas') } : null };
+  var cat = a ? stkCampo(a, 'Categoria') : 'MATERIAL';
+  var cuerpo = '<div class="stk-grid">' +
+    '<div><div class="stk-k">ID ' + (a ? '(permanente)' : '(no se puede cambiar después)') + '</div>' +
+      (a ? '<div class="stk-in mono" style="opacity:.8">' + stkEsc(id) + '</div>'
+         : '<input class="stk-in mono" id="stkm-id" maxlength="30" placeholder="ej: MAT-MALLA-15" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9-]/g,\'\')">') + '</div>' +
+    '<div style="grid-column:span 2"><div class="stk-k">Nombre visible</div><input class="stk-in" id="stkm-nombre" maxlength="120" value="' + stkEsc(a ? a.Nombre : '') + '"></div>' +
+    '<div><div class="stk-k">Categoría</div><select class="stk-in" id="stkm-categoria" onchange="stkArtCambioCategoria()">' +
+      (d.categorias || STK_ORDEN_CATEGORIAS).map(function(k) { return stkOpt(k, k, cat); }).join('') + '</select></div>' +
+    '<div><div class="stk-k">Unidad</div><select class="stk-in" id="stkm-unidad"' + (bloq ? ' disabled' : '') + '>' +
+      (d.unidades || []).map(function(u) { return stkOpt(u, u, a ? stkCampo(a, 'Unidad') : 'unidad'); }).join('') + '</select></div>' +
+    '<div style="display:flex;align-items:flex-end"><label class="stk-check"><input type="checkbox" id="stkm-genera"' + (a && stkVerdadero(a.GeneraEntrega) ? ' checked' : '') +
+      (bloq ? ' disabled' : '') + ' onchange="stkArtPrevia()"> Genera entrega a afiliado</label></div>' +
+    '<div style="grid-column:1/-1"><div class="stk-k">TextoEntregas (texto que se escribe en Entregas.Insumo, por compatibilidad)</div>' +
+      '<input class="stk-in" id="stkm-texto" maxlength="120" value="' + stkEsc(a ? stkCampo(a, 'TextoEntregas') : '') + '"' + (bloq ? ' disabled' : '') + ' oninput="stkArtPrevia()"></div>' +
+    '<div style="grid-column:1/-1"><div class="stk-k">Observación</div><input class="stk-in" id="stkm-observacion" maxlength="500" value="' + stkEsc(a ? stkCampo(a, 'Observacion') : '') + '"></div>' +
+    (a ? '<div style="grid-column:1/-1"><div class="stk-k">Motivo de la modificación (obligatorio)</div><input class="stk-in" id="stkm-motivo" maxlength="500"></div>' : '') +
+    '</div>' +
+    (bloq ? '<div class="stk-aviso">🔒 Este artículo tiene uso (' + [uso.movimientos ? uso.movimientos + ' movimiento(s)' : '', uso.entregas ? uso.entregas + ' entrega(s)' : '',
+      uso.mapeos ? uso.mapeos + ' mapeo(s)' : ''].filter(Boolean).join(', ') + '): Unidad, Genera entrega y TextoEntregas no se pueden modificar. Si hace falta, desactivalo y creá otro.</div>' : '') +
+    '<div id="stkm-previa"></div><div id="stkm-msg" class="stk-msg"></div>';
+  stkModalAbrir(a ? 'Editar artículo · ' + id : 'Nuevo artículo', cuerpo, stkPieGuardar(a ? 'Guardar cambios' : 'Crear artículo'));
+  if (!a) stkArtCambioCategoria();
+  stkArtPrevia();
+}
+
+function stkArtCambioCategoria() {
+  var inp = document.getElementById('stkm-id');
+  var pref = STK_PREFIJOS[stkVal('stkm-categoria')] || '';
+  if (inp && (!inp.value || inp.value === stkForm.prefijoPrevio)) inp.value = pref;
+  stkForm.prefijoPrevio = pref;
+  stkArtPrevia();
+}
+
+function stkArtPrevia() {
+  var el = document.getElementById('stkm-previa');
+  if (!el) return;
+  var genera = stkChk('stkm-genera'), texto = stkVal('stkm-texto'), cat = stkVal('stkm-categoria');
+  var inp = document.getElementById('stkm-texto');
+  if (inp && !stkForm.bloqueado) inp.disabled = !genera;
+  if (!genera) { el.innerHTML = '<div class="stk-aviso">No genera entrega: sus movimientos nunca escriben en Entregas ni afectan topes.</div>'; return; }
+  if (!String(texto).trim()) { el.innerHTML = '<div class="stk-aviso warn">Indicá el TextoEntregas.</div>'; return; }
+  var c = stkCompatTopes(texto);
+  if (cat === 'DIABETES' && !c.tipo) {
+    el.innerHTML = '<div class="stk-aviso bad">✗ Un artículo de DIABETES necesita un TextoEntregas que los topes actuales reconozcan (debe contener "tira", "lanceta", "aguja" o "gluc").</div>';
+  } else if (c.tipo) {
+    el.innerHTML = '<div class="stk-aviso ' + (cat === 'DIABETES' ? 'ok' : 'warn') + '">' + (cat === 'DIABETES' ? '✓ ' : '⚠ ') +
+      'En los topes actuales contará como <strong>' + stkEsc(c.tipo) + '</strong> · ' + (c.unidadesPorEnvase || 1) + ' unidad(es) por cada caja entregada.' +
+      (cat === 'DIABETES' ? '' : ' Este artículo no es de DIABETES: confirmá que es correcto.<div style="margin-top:8px"><label class="stk-check"><input type="checkbox" id="stkm-conf-adv"> Confirmo que debe contar para ese tope</label></div>') + '</div>';
+  } else {
+    el.innerHTML = '<div class="stk-aviso">No cuenta para los topes de Diabetes.</div>';
+  }
+}
+
+async function stkGuardarArticulo() {
+  var f = stkForm;
+  var art = {
+    ID: f.modo === 'alta' ? stkVal('stkm-id') : f.id,
+    Nombre: stkVal('stkm-nombre'), Categoria: stkVal('stkm-categoria'),
+    Unidad: f.bloqueado ? f.original.Unidad : stkVal('stkm-unidad'),
+    GeneraEntrega: f.bloqueado ? f.original.GeneraEntrega : stkChk('stkm-genera'),
+    TextoEntregas: f.bloqueado ? f.original.TextoEntregas : stkVal('stkm-texto'),
+    Observacion: stkVal('stkm-observacion')
+  };
+  if (f.modo === 'alta' && !/^[A-Z0-9][A-Z0-9-]{2,29}$/.test(art.ID)) { stkModalMsg('El ID debe tener entre 3 y 30 caracteres: mayúsculas, números y guiones.'); return; }
+  if (!String(art.Nombre).trim()) { stkModalMsg('El nombre es obligatorio.'); return; }
+  var payload = { modo: f.modo, articulo: art };
+  if (f.modo === 'edicion') {
+    payload.motivo = stkVal('stkm-motivo');
+    if (!String(payload.motivo).trim()) { stkModalMsg('Indicá el motivo de la modificación.'); return; }
+  }
+  if (document.getElementById('stkm-conf-adv')) {
+    if (!stkChk('stkm-conf-adv')) { stkModalMsg('Confirmá que el artículo debe contar para ese tope.'); return; }
+    payload.confirmaAdvertencia = true;
+  }
+  var r = await stkEnviar('stk_guardarArticulo', payload);
+  if (!r) return;
+  if (r.ok) { await stkExito(f.modo === 'alta' ? 'Artículo creado: ' + r.id : 'Artículo actualizado'); return; }
+  if (r.code === 'CONFIRMAR') { stkArtPrevia(); stkModalMsg(r.msg); return; }
+  stkModalMsg(r.msg || 'No se pudo guardar.');
+}
+
+// ── Activar / desactivar artículo ──────────────────────────────────────
+function stkAbrirActivoArticulo(id, activar) {
+  var a = stkArtMap()[id];
+  if (!a) return;
+  stkForm = { clase: 'activoArt', reqId: stkNuevoReqId(), id: id, activar: activar };
+  var saldos = [];
+  if (!activar) {
+    var s = stkSaldos('');
+    Object.keys(s).forEach(function(u) { if (s[u][id]) saldos.push({ ubicacion: u, saldo: s[u][id] }); });
+  }
+  var cuerpo = '<div class="stk-aviso">' + stkEsc(a.Nombre) + ' <span class="mono stk-dim">' + stkEsc(id) + '</span></div>' +
+    (activar ? '<div class="stk-aviso">Vuelve a estar disponible en los selectores de operaciones nuevas.</div>'
+             : '<div class="stk-aviso warn">No se borra: desaparece de los selectores de operaciones nuevas y sigue visible en el historial y en los saldos.</div>') +
+    (saldos.length ? stkConfirmacionHtml('⚠ Todavía tiene saldo:<ul style="margin:6px 0 0 18px">' + saldos.map(function(x) {
+      return '<li>' + stkEsc(stkNombreUbic(x.ubicacion)) + ': ' + stkEsc(stkCant(x.saldo, a)) + '</li>'; }).join('') + '</ul>', false) : '') +
+    '<div class="stk-k">Motivo (obligatorio)</div><input class="stk-in" id="stkm-motivo" maxlength="500"><div id="stkm-msg" class="stk-msg"></div>';
+  stkModalAbrir((activar ? 'Activar' : 'Desactivar') + ' artículo', cuerpo, stkPieGuardar(activar ? 'Activar' : 'Desactivar'));
+}
+
+async function stkGuardarActivoArticulo() {
+  var motivo = String(stkVal('stkm-motivo')).trim();
+  if (!motivo) { stkModalMsg('Indicá el motivo.'); return; }
+  var payload = { id: stkForm.id, activo: stkForm.activar, motivo: motivo };
+  if (document.getElementById('stkm-confirmar')) {
+    if (!stkChk('stkm-conf-chk')) { stkModalMsg('Confirmá para continuar.'); return; }
+    payload.confirmaSaldo = true;
+  }
+  var r = await stkEnviar('stk_setArticuloActivo', payload);
+  if (!r) return;
+  if (r.ok) { await stkExito(stkForm.activar ? 'Artículo activado' : 'Artículo desactivado'); return; }
+  if (r.code === 'CONFIRMAR') {
+    var cuerpo = document.getElementById('stkm-cuerpo');
+    if (cuerpo && !document.getElementById('stkm-confirmar')) cuerpo.insertAdjacentHTML('afterbegin', stkConfirmacionHtml('⚠ ' + stkEsc(r.msg), false));
+    stkModalMsg('Confirmá para continuar.');
+    return;
+  }
+  stkModalMsg(r.msg || 'No se pudo guardar.');
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// MAPEOS
+// ══════════════════════════════════════════════════════════════════════
+function stkAbrirMapeo(i) {
+  var t = stkEstado.analisis.textosSinArticulo[i];
+  if (!t) return;
+  stkForm = { clase: 'mapeo', reqId: stkNuevoReqId(), texto: t.texto };
+  var arts = ((stkEstado.datos && stkEstado.datos.articulos) || []).filter(function(a) { return stkVerdadero(a.GeneraEntrega); })
+    .sort(function(x, y) { return (stkVerdadero(y.Activo) - stkVerdadero(x.Activo)) || (String(x.Nombre) < String(y.Nombre) ? -1 : 1); });
+  var cuerpo = '<div class="stk-k">Texto histórico en Entregas</div><div class="stk-aviso">' + stkEsc(t.texto) +
+    ' <span class="stk-dim">· ' + t.desde + ' fila(s) desde el corte · ' + t.total + ' en total</span></div>' +
+    '<div class="stk-grid"><div style="grid-column:1/-1"><div class="stk-k">Corresponde al artículo</div><select class="stk-in" id="stkm-art">' +
+      '<option value="">— Elegí un artículo —</option>' + arts.map(function(a) {
+        return '<option value="' + stkEsc(stkCampo(a, 'ID')) + '">' + stkEsc(a.Nombre) + ' · ' + stkEsc(a.ID) + (stkVerdadero(a.Activo) ? '' : ' (inactivo)') + '</option>';
+      }).join('') + '</select></div>' +
+    '<div style="grid-column:1/-1"><div class="stk-k">Observación</div><input class="stk-in" id="stkm-obs" maxlength="500"></div></div>' +
+    '<div class="stk-aviso">El mapeo solo sirve para identificar entregas históricas que no tienen ArticuloID. Nunca se usa para cargas nuevas.</div>' +
+    '<div id="stkm-msg" class="stk-msg"></div>';
+  stkModalAbrir('Mapear texto histórico', cuerpo, stkPieGuardar('Crear mapeo'));
+}
+
+async function stkGuardarMapeoForm() {
+  var art = stkVal('stkm-art');
+  if (!art) { stkModalMsg('Elegí el artículo.'); return; }
+  var r = await stkEnviar('stk_guardarMapeo', { texto: stkForm.texto, articuloId: art, observacion: stkVal('stkm-obs') });
+  if (!r) return;
+  if (r.ok) { await stkExito('Mapeo creado'); return; }
+  stkModalMsg(r.msg || 'No se pudo guardar.');
+}
+
+function stkAbrirActivoMapeo(id, activar) {
+  var m = ((stkEstado.datos && stkEstado.datos.mapeos) || []).filter(function(x) { return stkCampo(x, 'ID') === id; })[0];
+  if (!m) return;
+  stkForm = { clase: 'activoMap', reqId: stkNuevoReqId(), id: id, activar: activar };
+  var cuerpo = '<div class="stk-aviso">' + stkEsc(m.TextoOriginal) + ' → <span class="mono">' + stkEsc(m.ArticuloID) + '</span></div>' +
+    '<div class="stk-aviso">' + (activar ? 'Las entregas con este texto volverán a identificarse por este mapeo.' : 'Las entregas con este texto volverán a quedar ❓ hasta que exista otro mapeo.') + '</div>' +
+    '<div class="stk-k">Motivo (obligatorio)</div><input class="stk-in" id="stkm-motivo" maxlength="500"><div id="stkm-msg" class="stk-msg"></div>';
+  stkModalAbrir((activar ? 'Activar' : 'Desactivar') + ' mapeo', cuerpo, stkPieGuardar(activar ? 'Activar' : 'Desactivar'));
+}
+
+async function stkGuardarActivoMapeo() {
+  var motivo = String(stkVal('stkm-motivo')).trim();
+  if (!motivo) { stkModalMsg('Indicá el motivo.'); return; }
+  var r = await stkEnviar('stk_setMapeoActivo', { id: stkForm.id, activo: stkForm.activar, motivo: motivo });
+  if (!r) return;
+  if (r.ok) { await stkExito(stkForm.activar ? 'Mapeo activado' : 'Mapeo desactivado'); return; }
+  stkModalMsg(r.msg || 'No se pudo guardar.');
 }
