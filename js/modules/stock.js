@@ -1,8 +1,12 @@
 // ══════════════════════════════════════════════════════════════════════
 // 🏬 STOCK Y MOVIMIENTOS — SEC-1a.2 (lectura) + SEC-1a.3a (catálogo, mapeos y operaciones)
+//                         + SEC-1a.3b-1 (entregas, bajas, ajustes, constancias, historial, compras, informes)
 // ----------------------------------------------------------------------
-// Módulo independiente. No modifica DB, allData, localStorage ni la hoja
-// Entregas. Solo llama a acciones del servidor que empiezan con "stk_".
+// Módulo independiente. No modifica allData ni la hoja Entregas. Solo llama
+// a acciones del servidor que empiezan con "stk_".
+// ÚNICA excepción (SEC-1a.3b-1, D8): agrega fichas INCOMPLETAS de afiliados a
+// DB.pacientes (y guarda con saveDB) cuando una entrega de Stock nombra un DNI
+// que no tiene ficha. Nunca modifica ni borra fichas existentes.
 // El token de sesión vive en sessionStorage (se borra al cerrar la pestaña).
 // Todas las funciones y variables globales usan el prefijo "stk".
 // ══════════════════════════════════════════════════════════════════════
@@ -205,6 +209,7 @@ async function cargarStkDatos() {
     } else {
       stkEstado.datos = r;
       stkEstado.analisis = stkAnalizar(r);
+      stkRecuperarFichas();   // SEC-1a.3b-1: fichas incompletas de afiliados con entregas de Stock
     }
   } catch (e) {
     stkEstado.error = e.message || String(e);
@@ -406,7 +411,7 @@ function renderStkPage() {
     '<span class="b bg">🔓 Sesión de Stock activa</span>' +
     '<span class="stk-dim">vence a las ' + hhmm + '</span>' +
     '<span style="flex:1"></span>' +
-    '<span class="b bgr">SEC-1a.3a</span>' +
+    '<span class="b bgr">SEC-1a.3b-1</span>' +
     '<button class="btn bs bsm" onclick="cargarStkDatos()"' + (stkEstado.cargando ? ' disabled' : '') + '>🔄 Actualizar</button>' +
     '<button class="btn bs bsm" onclick="stkLogout()">Cerrar sesión</button>' +
     '</div>';
@@ -426,6 +431,8 @@ function renderStkPage() {
     '<button class="stk-tab' + (stkEstado.tab === 'resumen' ? ' active' : '') + '" onclick="stkTab(\'resumen\')">📌 Resumen</button>' +
     '<button class="stk-tab' + (stkEstado.tab === 'stock' ? ' active' : '') + '" onclick="stkTab(\'stock\')">📦 Stock</button>' +
     '<button class="stk-tab' + (stkEstado.tab === 'movimientos' ? ' active' : '') + '" onclick="stkTab(\'movimientos\')">🔁 Movimientos</button>' +
+    '<button class="stk-tab' + (stkEstado.tab === 'historial' ? ' active' : '') + '" onclick="stkTab(\'historial\')">📤 Historial de entregas</button>' +   // SEC-1a.3b-1
+    '<button class="stk-tab' + (stkEstado.tab === 'compras' ? ' active' : '') + '" onclick="stkTab(\'compras\')">🧾 Compras</button>' +                  // SEC-1a.3b-1
     '<button class="stk-tab' + (stkEstado.tab === 'catalogo' ? ' active' : '') + '" onclick="stkTab(\'catalogo\')">🗂 Catálogo</button>' +
     '<button class="stk-tab' + (stkEstado.tab === 'entregas' ? ' active' : '') + '" onclick="stkTab(\'entregas\')">📋 Entregas desde el corte' +
       (a && a.conteo.SIN_CLASIFICAR ? ' <span class="b br">' + a.conteo.SIN_CLASIFICAR + '</span>' : '') + '</button>' +
@@ -433,7 +440,8 @@ function renderStkPage() {
   el.innerHTML = html;
   var c = document.getElementById('stk-contenido');
   if (stkEstado.tab === 'entregas') renderStkEntregas(c);
-  else if (stkEstado.tab === 'stock' || stkEstado.tab === 'movimientos' || stkEstado.tab === 'catalogo') renderStkNuevaSolapa(c);   // SEC-1a.3a
+  else if (stkEstado.tab === 'stock' || stkEstado.tab === 'movimientos' || stkEstado.tab === 'catalogo' ||
+           stkEstado.tab === 'historial' || stkEstado.tab === 'compras') renderStkNuevaSolapa(c);   // SEC-1a.3a + 3b-1
   else renderStkResumen(c);
 }
 
@@ -494,7 +502,8 @@ function renderStkResumen(c) {
     '</div>' +
     (cfg.avisoFechaCorte ? '<div class="stk-aviso warn">⚠ ' + stkEsc(cfg.avisoFechaCorte) + '</div>' : '') +
     (cfg.fechaCorte !== STK_CORTE_ESPERADO ? '<div class="stk-aviso bad">⚠ El servidor informa una fecha de corte distinta de ' + stkFmtFecha(STK_CORTE_ESPERADO) + '.</div>' : '') +
-    '<div class="stk-aviso">📦 El saldo por movimientos se consulta en la solapa Stock y las operaciones se cargan en Movimientos. Las entregas a afiliados todavía no descuentan stock (SEC-1a.4).</div>' +
+    '<div class="stk-aviso">📦 El saldo por movimientos se consulta en la solapa Stock y las operaciones se cargan en Movimientos. ' +
+      'Las entregas, bajas y ajustes registrados en Stock descuentan; las entregas de Diabetes de la hoja Entregas todavía no (SEC-1a.4).</div>' +
     '</div></div>';
 
   // Ubicaciones
@@ -750,7 +759,8 @@ function stkExportarCSV() {
 // · Toda escritura lleva ReqId; el servidor valida todo y audita.
 // ══════════════════════════════════════════════════════════════════════
 
-var STK_NOMBRES_TIPO = { STOCK_INICIAL: 'Stock inicial', INGRESO: 'Ingreso', TRANSFERENCIA: 'Transferencia' };
+var STK_NOMBRES_TIPO = { STOCK_INICIAL: 'Stock inicial', INGRESO: 'Ingreso', TRANSFERENCIA: 'Transferencia',
+                         ENTREGA: 'Entrega', BAJA: 'Baja', AJUSTE: 'Ajuste' };   // SEC-1a.3b-1
 var STK_PREFIJOS = { DIABETES: 'DB-', MATERIAL: 'MAT-', ADMINISTRATIVO: 'ADM-', EQUIPAMIENTO: 'EQ-', OTRO: 'OTR-' };
 var STK_MAX_OPS_LISTA = 300;
 
@@ -897,6 +907,10 @@ function stkOperaciones() {
       ops[id] = { id: id, tipo: stkCampo(m, 'Tipo'), fecha: stkCampo(m, 'Fecha'), origen: stkCampo(m, 'Origen'),
                   destino: stkCampo(m, 'Destino'), proveedor: stkCampo(m, 'Proveedor'), comprobante: stkCampo(m, 'Comprobante'),
                   observacion: stkCampo(m, 'Observacion'), creadoEn: stkCampo(m, 'CreadoEn'), modificadoEn: stkCampo(m, 'ModificadoEn'),
+                  // SEC-1a.3b-1
+                  tipoDestinatario: stkCampo(m, 'TipoDestinatario'), destinatario: stkCampo(m, 'Destinatario'), dni: stkCampo(m, 'DNI'),
+                  seccional: stkCampo(m, 'SeccionalDestino'), retira: stkCampo(m, 'Retira'), retiraDetalle: stkCampo(m, 'RetiraDetalle'),
+                  causa: stkCampo(m, 'Causa'), motivo: stkCampo(m, 'Motivo'),
                   activa: false, lineas: [] };
       orden.push(id);
     }
@@ -911,7 +925,8 @@ function stkResumenLineas(op, max) {
   var arts = stkArtMap();
   var partes = op.lineas.map(function(l) {
     var a = arts[stkCampo(l, 'ArticuloID')];
-    return (a ? stkCampo(a, 'Nombre') : stkCampo(l, 'ArticuloID')) + ' × ' + stkCant(l.Cantidad, a);
+    var signo = op.tipo === 'AJUSTE' ? (stkCampo(l, 'Destino') ? '+' : '−') : '';   // SEC-1a.3b-1
+    return (a ? stkCampo(a, 'Nombre') : stkCampo(l, 'ArticuloID')) + ' × ' + signo + stkCant(l.Cantidad, a);
   });
   var max2 = max || 3;
   return partes.slice(0, max2).join(' · ') + (partes.length > max2 ? ' · y ' + (partes.length - max2) + ' más' : '');
@@ -946,7 +961,14 @@ async function stkCargarMovs() {
   if (r.code === 'SESION_INVALIDA') return r;
   if (r.code === 'ACCION_DESCONOCIDA' || (r.ok && !Array.isArray(r.movimientos)))
     return { ok: false, msg: 'El servidor no tiene instalado SEC-1a.3a (falta la acción stk_getMovs). Actualizá el Code.gs y publicá una nueva versión.' };
-  if (r.ok) { stkEstado.movs = r.movimientos; stkEstado.hoy = r.hoy || ''; stkEstado.listas = { campos: r.camposEntrega || {}, estados: r.estadosElemento || [] }; }
+  if (r.ok && !r.tiposDestinatario)   // SEC-1a.3b-1
+    return { ok: false, msg: 'El servidor no tiene instalado SEC-1a.3b-1. Actualizá el Code.gs, ejecutá stkSetup y publicá una nueva versión.' };
+  if (r.ok) {
+    stkEstado.movs = r.movimientos; stkEstado.hoy = r.hoy || '';
+    stkEstado.listas = { campos: r.camposEntrega || {}, estados: r.estadosElemento || [],
+      tiposDestinatario: r.tiposDestinatario || {}, retira: r.retira || {}, causasBaja: r.causasBaja || {}, estadosConstancia: r.estadosConstancia || {} };
+    stkEstado.afiliadosEntregas = r.afiliadosEntregas || [];
+  }
   return r;
 }
 
@@ -956,11 +978,13 @@ function renderStkNuevaSolapa(c) {
   if (stkEstado.tab === 'stock') { if (stkEstado.ficha) renderStkFicha(c); else renderStkStock(c); }
   else if (stkEstado.tab === 'movimientos') renderStkMovimientos(c);
   else if (stkEstado.tab === 'catalogo') renderStkCatalogo(c);
+  else if (stkEstado.tab === 'historial') renderStkHistorial(c);   // SEC-1a.3b-1
+  else if (stkEstado.tab === 'compras') renderStkCompras(c);       // SEC-1a.3b-1
 }
 
 function stkBannerSaldo() {
-  return '<div class="stk-aviso warn">⚠ <strong>Saldo por movimientos</strong>: stock inicial + ingresos ± transferencias. ' +
-    'Todavía <strong>no descuenta las entregas a afiliados</strong> (se habilita en SEC-1a.4), así que no es el stock definitivo.</div>';
+  return '<div class="stk-aviso warn">⚠ <strong>Saldo por movimientos</strong>: stock inicial + ingresos ± transferencias − entregas − bajas ± ajustes. ' +
+    'Todavía <strong>no descuenta las entregas de Diabetes de la hoja Entregas</strong> (se habilita en SEC-1a.4).</div>';
 }
 
 // ── Solapa STOCK ──────────────────────────────────────────────────────
@@ -1068,6 +1092,11 @@ function renderStkFicha(c) {
     (env.length ? stkTablaOps(env, U) : '<div class="stk-vacio">Sin transferencias enviadas.</div>') + '</div></div>';
   h += '<div class="card"><div class="ch">📥 <span class="ct">Transferencias recibidas</span><span class="stk-dim">' + rec.length + '</span></div><div class="cb tw">' +
     (rec.length ? stkTablaOps(rec, U) : '<div class="stk-vacio">Sin transferencias recibidas.</div>') + '</div></div>';
+  // SEC-1a.3b-1
+  var ent = ops.filter(function(op) { return op.tipo === 'ENTREGA' && op.origen === U; });
+  if (ent.length) h += '<div class="card"><div class="ch">📤 <span class="ct">Entregas</span><span class="stk-dim">' + ent.length + ' · detalle completo en 📤 Historial de entregas</span></div><div class="cb tw">' + stkTablaOps(ent, U) + '</div></div>';
+  var baj = ops.filter(function(op) { return (op.tipo === 'BAJA' && op.origen === U) || (op.tipo === 'AJUSTE' && (op.origen === U || op.destino === U)); });
+  if (baj.length) h += '<div class="card"><div class="ch">🗑 <span class="ct">Bajas y ajustes</span><span class="stk-dim">' + baj.length + '</span></div><div class="cb tw">' + stkTablaOps(baj, U) + '</div></div>';
 
   // Kárdex
   var conMovs = {};
@@ -1090,11 +1119,13 @@ function stkTablaOps(ops, U) {
   return '<table><thead><tr><th>Fecha</th><th>Detalle</th><th>Artículo</th><th class="stk-num">Cantidad</th><th>Operación</th></tr></thead><tbody>' +
     ops.map(function(op) {
       var det = op.tipo === 'TRANSFERENCIA' ? (op.origen === U ? '→ ' + stkNombreUbic(op.destino) : '← ' + stkNombreUbic(op.origen))
-              : op.tipo === 'INGRESO' ? [op.proveedor, op.comprobante].filter(Boolean).join(' · ') || '—' : (op.observacion || '—');
+              : op.tipo === 'INGRESO' ? [op.proveedor, op.comprobante].filter(Boolean).join(' · ') || '—'
+              : stkDetalleOp3b(op) || (op.observacion || '—');   // SEC-1a.3b-1
       return op.lineas.filter(stkEsActivo).map(function(l, i) {
         var a = arts[stkCampo(l, 'ArticuloID')];
+        var signo = op.tipo === 'AJUSTE' ? (stkCampo(l, 'Destino') ? '+' : '−') : '';
         return '<tr><td class="mono">' + (i ? '' : stkFmtFecha(op.fecha)) + '</td><td>' + (i ? '' : stkEsc(det)) + '</td><td>' +
-          stkEsc(a ? a.Nombre : l.ArticuloID) + '</td><td class="stk-num">' + stkEsc(stkCant(l.Cantidad, a)) + '</td><td class="mono stk-dim">' +
+          stkEsc(a ? a.Nombre : l.ArticuloID) + '</td><td class="stk-num">' + stkEsc(signo + stkCant(l.Cantidad, a)) + '</td><td class="mono stk-dim">' +
           (i ? '' : stkEsc(op.id)) + '</td></tr>';
       }).join('');
     }).join('') + '</tbody></table>';
@@ -1113,7 +1144,7 @@ function stkKardexHtml(U, artId, hasta) {
       saldo += (entra ? c : 0) - (sale ? c : 0);
       var contra = stkCampo(m, 'Tipo') === 'TRANSFERENCIA' ? (entra ? 'desde ' + stkNombreUbic(m.Origen) : 'hacia ' + stkNombreUbic(m.Destino))
                  : stkCampo(m, 'Tipo') === 'INGRESO' ? [stkCampo(m, 'Proveedor'), stkCampo(m, 'Comprobante')].filter(Boolean).join(' · ') || '—'
-                 : stkCampo(m, 'Observacion') || '—';
+                 : stkDetalleMov3b(m) || stkCampo(m, 'Observacion') || '—';   // SEC-1a.3b-1
       return '<tr><td class="mono">' + stkFmtFecha(String(m.Fecha)) + '</td><td>' + stkEsc(STK_NOMBRES_TIPO[m.Tipo] || m.Tipo) + '</td><td>' + stkEsc(contra) +
         '</td><td class="stk-num">' + (entra ? c.toLocaleString('es-AR') : '') + '</td><td class="stk-num">' + (sale ? c.toLocaleString('es-AR') : '') +
         '</td><td class="stk-num ' + (saldo < 0 ? 'stk-neg' : '') + '" style="font-weight:600">' + saldo.toLocaleString('es-AR') + '</td><td class="mono stk-dim">' + stkEsc(m.OperacionID) + '</td></tr>';
@@ -1140,6 +1171,9 @@ function renderStkMovimientos(c) {
     '<button class="btn bp bsm" ' + (modo ? '' : 'disabled title="Solo con el modo carga inicial activo" ') + 'onclick="stkAbrirOperacion(\'STOCK_INICIAL\')">+ Stock inicial</button>' +
     '<button class="btn bp bsm" onclick="stkAbrirOperacion(\'INGRESO\')">+ Ingreso / compra</button>' +
     '<button class="btn bp bsm" onclick="stkAbrirOperacion(\'TRANSFERENCIA\')">+ Transferencia</button>' +
+    '<button class="btn bp bsm" onclick="stkAbrirEntrega()">+ Entrega</button>' +                   // SEC-1a.3b-1
+    '<button class="btn bs bsm" onclick="stkAbrirOperacion3b(\'BAJA\')">+ Baja</button>' +          // SEC-1a.3b-1
+    '<button class="btn bs bsm" onclick="stkAbrirOperacion3b(\'AJUSTE\')">± Ajuste</button>' +      // SEC-1a.3b-1
     '<span style="flex:1"></span>' +
     (modo ? '<span class="b bo">Modo carga inicial activo</span>' : '<span class="b bg">Modo carga inicial inactivo</span>') + '</div>';
   h += '<div class="stk-filtros">' +
@@ -1159,7 +1193,7 @@ function renderStkMovimientos(c) {
     (vis.length ? '<table><thead><tr><th>Fecha</th><th>Tipo</th><th>Recorrido</th><th>Artículos</th><th>Proveedor / comprobante</th><th>Estado</th><th></th></tr></thead><tbody>' +
       vis.map(function(op) {
         var abierta = !!stkEstado.opsAbiertas[op.id], ref = stkRef(op.id);
-        var rec = op.tipo === 'TRANSFERENCIA' ? stkNombreUbic(op.origen) + ' → ' + stkNombreUbic(op.destino) : '→ ' + stkNombreUbic(op.destino);
+        var rec = stkRecorridoOp(op);   // SEC-1a.3b-1 (incluye los tipos de 1a.3a con el mismo texto)
         var fila = '<tr class="' + (op.activa ? '' : 'stk-anulada') + '"><td class="mono">' + stkFmtFecha(op.fecha) + '</td><td>' +
           stkEsc(STK_NOMBRES_TIPO[op.tipo] || op.tipo) + '</td><td>' + stkEsc(rec) + '</td><td style="font-size:12px">' + stkEsc(stkResumenLineas(op, 3)) +
           '</td><td class="stk-dim">' + stkEsc([op.proveedor, op.comprobante].filter(Boolean).join(' · ')) + '</td><td>' +
@@ -1171,11 +1205,13 @@ function renderStkMovimientos(c) {
             (op.tipo === 'INGRESO' ? '<th class="stk-num">Precio unit.</th><th class="stk-num">Importe</th>' : '') + '<th>Estado</th><th>ID línea</th></tr></thead><tbody>' +
             op.lineas.map(function(l) {
               var a = arts[stkCampo(l, 'ArticuloID')];
-              return '<tr><td>' + stkEsc(a ? a.Nombre : l.ArticuloID) + '</td><td class="stk-num">' + stkEsc(stkCant(l.Cantidad, a)) + '</td>' +
+              var sg = op.tipo === 'AJUSTE' ? (stkCampo(l, 'Destino') ? '+' : '−') : '';   // SEC-1a.3b-1
+              return '<tr><td>' + stkEsc(a ? a.Nombre : l.ArticuloID) + stkExtraHtml(l.DatosExtra) + '</td><td class="stk-num">' + stkEsc(sg + stkCant(l.Cantidad, a)) + '</td>' +
                 (op.tipo === 'INGRESO' ? '<td class="stk-num">' + stkEsc(l.PrecioUnit === '' ? '—' : Number(l.PrecioUnit).toLocaleString('es-AR')) +
                   '</td><td class="stk-num">' + stkEsc(l.Importe === '' ? '—' : Number(l.Importe).toLocaleString('es-AR')) + '</td>' : '') +
                 '<td>' + stkEsc(l.Estado) + '</td><td class="mono stk-dim">' + stkEsc(l.ID) + '</td></tr>';
             }).join('') + '</tbody></table>' +
+            stkCabecera3bHtml(op) +   // SEC-1a.3b-1
             '<div class="stk-dim" style="margin-top:6px">Operación ' + stkEsc(op.id) + ' · creada ' + stkEsc(op.creadoEn) +
             (op.observacion ? ' · Observación: ' + stkEsc(op.observacion) : '') + (op.activa ? '' : ' · anulada ' + stkEsc(op.modificadoEn)) + '</div></td></tr>';
         }
@@ -1241,7 +1277,7 @@ function renderStkCatalogo(c) {
 function stkAtributosHtml(x) {
   var b = [];
   if (stkVerdadero(x.ControlaStock)) b.push('<span class="b bgr" title="Controla stock">Stock</span>');
-  if (stkVerdadero(x.GeneraEntrega)) b.push('<span class="b bb" title="Genera entrega a una persona">Entrega</span>');
+  if (stkVerdadero(x.GeneraEntrega)) b.push('<span class="b bb" title="Se entrega a afiliados desde Stock">Afiliados</span>');   // SEC-1a.3b-1
   if (stkVerdadero(x.ControlaTopeDiabetes)) b.push('<span class="b bo" title="Controla tope de Diabetes (hoja Entregas)">Tope DB</span>');
   if (stkVerdadero(x.PermiteComodato)) b.push('<span class="b bpu" title="Permite comodato">Comodato</span>');
   if (stkVerdadero(x.ControlaUnidades)) b.push('<span class="b bgr" title="Control por unidad individual">Por unidad</span>');
@@ -1297,7 +1333,8 @@ function stkGuardarModal() {
   if (stkForm.enviando) return;          // evita doble envío (doble clic)
   var f = stkForm.clase === 'operacion' ? stkGuardarOperacion : stkForm.clase === 'articulo' ? stkGuardarArticulo
         : stkForm.clase === 'activoArt' ? stkGuardarActivoArticulo : stkForm.clase === 'mapeo' ? stkGuardarMapeoForm
-        : stkForm.clase === 'activoMap' ? stkGuardarActivoMapeo : stkForm.clase === 'anular' ? stkGuardarAnular : null;
+        : stkForm.clase === 'activoMap' ? stkGuardarActivoMapeo : stkForm.clase === 'anular' ? stkGuardarAnular
+        : stkForm.clase === 'op3b' ? stkGuardarOperacion3b : stkForm.clase === 'constancia' ? stkGuardarConstancia : null;   // SEC-1a.3b-1
   if (!f) return;
   var form = stkForm;
   form.enviando = true;
@@ -1321,6 +1358,7 @@ async function stkEnviar(accion, payload) {
 async function stkExito(msg) {
   stkModalCerrar();
   stkAviso(msg, 'ok');
+  stkInvalidarConsultas();   // SEC-1a.3b-1: el historial y las compras se vuelven a consultar al verlos
   await cargarStkDatos();
 }
 
@@ -1407,15 +1445,17 @@ function stkRenderLineasSI() {
   var cats = {};
   arts.forEach(function(a) { var k = String(a.Categoria || 'OTRO'); (cats[k] = cats[k] || []).push(a); });
   var orden = STK_ORDEN_CATEGORIAS.filter(function(k) { return cats[k]; }).concat(Object.keys(cats).filter(function(k) { return STK_ORDEN_CATEGORIAS.indexOf(k) < 0; }));
-  document.getElementById('stkm-lineas').innerHTML = '<div class="tw"><table class="stk-lineas"><thead><tr><th>Artículo</th><th>Unidad</th><th style="width:150px">Cantidad</th></tr></thead><tbody>' +
+  // SEC-1a.3b-1 (D5): precio unitario opcional, para que lo entregado desde el stock inicial tenga valor de referencia
+  document.getElementById('stkm-lineas').innerHTML = '<div class="tw"><table class="stk-lineas"><thead><tr><th>Artículo</th><th>Unidad</th><th style="width:150px">Cantidad</th><th style="width:150px">Precio unit. (opc.)</th></tr></thead><tbody>' +
     orden.map(function(k) {
-      return '<tr class="stk-grupo"><td colspan="3" style="font-size:10.5px;font-weight:700;color:var(--ac)">' + stkEsc(k) + '</td></tr>' + cats[k].map(function(a) {
+      return '<tr class="stk-grupo"><td colspan="4" style="font-size:10.5px;font-weight:700;color:var(--ac)">' + stkEsc(k) + '</td></tr>' + cats[k].map(function(a) {
         var id = stkCampo(a, 'ID'), ya = declarados[id];
         return '<tr><td>' + stkEsc(a.Nombre) + '<div class="mono stk-dim">' + stkEsc(id) + '</div></td><td>' + stkEsc(a.Unidad) + '</td><td>' +
           (ya !== undefined ? '<span class="stk-dim">Ya declarado: ' + ya.toLocaleString('es-AR') + '</span>'
-            : '<input class="stk-in stk-num stkm-si" data-art="' + stkEsc(id) + '" inputmode="numeric" placeholder="0">') + '</td></tr>';
+            : '<input class="stk-in stk-num stkm-si" data-art="' + stkEsc(id) + '" inputmode="numeric" placeholder="0">') + '</td><td>' +
+          (ya !== undefined ? '' : '<input class="stk-in stk-num stkm-si-p" data-art="' + stkEsc(id) + '" inputmode="decimal" placeholder="—">') + '</td></tr>';
       }).join('');
-    }).join('') + '</tbody></table></div><div class="stk-dim" style="margin-top:6px">Solo se guardan las cantidades mayores a 0. Para corregir un stock inicial ya declarado, anulá esa operación y cargala de nuevo.</div>';
+    }).join('') + '</tbody></table></div><div class="stk-dim" style="margin-top:6px">Solo se guardan las cantidades mayores a 0. El precio es opcional: sirve como valor de referencia de lo entregado. Para corregir un stock inicial ya declarado, anulá esa operación y cargala de nuevo.</div>';
 }
 
 function stkRenderLineas() {
@@ -1431,8 +1471,25 @@ function stkRenderLineas() {
           (String(l.precioUnit).trim() ? ' disabled' : '') + '></td>' : '') +
         (tipo === 'TRANSFERENCIA' ? '<td class="stk-dim" id="stkm-disp-' + i + '"></td>' : '') +
         '<td>' + (stkForm.lineas.length > 1 ? '<button class="btn bs bsm" title="Quitar" onclick="stkQuitarLinea(' + i + ')">✕</button>' : '') + '</td></tr>';
-    }).join('') + '</tbody></table></div>';
+    }).join('') + '</tbody></table></div>' +
+    (tipo === 'INGRESO' ? '<div id="stkm-total" class="stk-aviso" style="margin-top:8px"></div>' : '');   // SEC-1a.3b-1: total calculado de la compra
   stkRecalcularOperacion();
+  stkTotalIngreso();
+}
+
+// SEC-1a.3b-1: total de la compra (solo informativo; el servidor calcula cada importe)
+function stkTotalIngreso() {
+  var el = document.getElementById('stkm-total');
+  if (!el || !stkForm || stkForm.tipo !== 'INGRESO') return;
+  var total = 0, sin = 0, con = 0;
+  stkForm.lineas.forEach(function(l) {
+    if (!l.articuloId) return;
+    var p = stkNumeroAR(l.precioUnit), im = stkNumeroAR(l.importe), c = /^\d+$/.test(String(l.cantidad).trim()) ? Number(l.cantidad) : null;
+    var v = (p !== null && !isNaN(p) && c !== null) ? Math.round(p * c * 100) / 100 : (p === null && im !== null && !isNaN(im)) ? im : null;
+    if (v === null) sin++; else { total += v; con++; }
+  });
+  el.innerHTML = '🧾 <strong>Total de la compra: ' + stkEsc(stkMoneda(total)) + '</strong>' +
+    (sin ? ' <span class="stk-dim">· ' + sin + ' artículo(s) sin precio no suman al total</span>' : '');
 }
 
 function stkAgregarLinea() {
@@ -1465,6 +1522,7 @@ function stkLinea(i, campo, valor) {
     }
   }
   stkRecalcularOperacion();
+  stkTotalIngreso();   // SEC-1a.3b-1
 }
 
 function stkRecalcularOperacion() {
@@ -1493,14 +1551,20 @@ async function stkGuardarOperacion() {
   var enc = { destino: stkVal('stkm-destino'), observacion: stkVal('stkm-obs') };
   var lineas = [];
   if (tipo === 'STOCK_INICIAL') {
-    var malas = 0;
+    var malas = 0, malasP = 0;
     document.querySelectorAll('#stk-modal .stkm-si').forEach(function(inp) {
       var v = String(inp.value).trim();
       if (!v || v === '0') return;
       if (!/^\d+$/.test(v)) { malas++; return; }
-      lineas.push({ articuloId: inp.getAttribute('data-art'), cantidad: Number(v) });
+      var linSI = { articuloId: inp.getAttribute('data-art'), cantidad: Number(v) };
+      var pInp = document.querySelector('#stk-modal .stkm-si-p[data-art="' + linSI.articuloId + '"]');   // SEC-1a.3b-1
+      var pSI = pInp ? stkNumeroAR(pInp.value) : null;
+      if (pSI !== null && (isNaN(pSI) || pSI < 0)) { malasP++; return; }
+      if (pSI !== null) linSI.precioUnit = pSI;
+      lineas.push(linSI);
     });
     if (malas) { stkModalMsg('Las cantidades deben ser números enteros.'); return; }
+    if (malasP) { stkModalMsg('Los precios deben ser números mayores o iguales a 0.'); return; }
   } else {
     enc.fecha = stkVal('stkm-fecha');
     if (tipo === 'TRANSFERENCIA') enc.origen = stkVal('stkm-origen');
@@ -1563,7 +1627,7 @@ function stkAbrirAnular(opId) {
   var det = stkVerificarSaldosCli(stkEstado.movs, cambios);
   var modo = stkEstado.datos.config && stkEstado.datos.config.modoCargaInicial;
   var cuerpo = '<div class="stk-aviso">' + stkEsc(STK_NOMBRES_TIPO[op.tipo] || op.tipo) + ' del ' + stkFmtFecha(op.fecha) + ' · ' +
-    stkEsc(op.tipo === 'TRANSFERENCIA' ? stkNombreUbic(op.origen) + ' → ' + stkNombreUbic(op.destino) : '→ ' + stkNombreUbic(op.destino)) +
+    stkEsc(stkRecorridoOp(op)) +   // SEC-1a.3b-1
     '<br>' + stkEsc(stkResumenLineas(op, 50)) + '</div>' +
     '<div class="stk-aviso warn">La operación completa queda <strong>anulada</strong>: no se borra, deja de contar en los saldos y queda registrada en auditoría. Si fue un error de carga, después cargala de nuevo.</div>' +
     (det.length ? (modo ? '<div class="stk-aviso warn">⚠ Al anular, algún saldo queda negativo (modo carga inicial: solo advertencia).' + stkDetalleSaldos(det) + '</div>'
@@ -1598,10 +1662,11 @@ async function stkGuardarAnular() {
 // ══════════════════════════════════════════════════════════════════════
 var STK_ATRIB_UI = [
   { k: 'ControlaStock',        id: 'stkm-a-stock',    txt: 'Controla stock',                 ayuda: 'Se controla por cantidad (saldo y movimientos)' },
-  { k: 'GeneraEntrega',        id: 'stkm-a-entrega',  txt: 'Genera entrega a una persona',   ayuda: 'Se puede entregar a un afiliado/persona con trazabilidad' },
-  { k: 'ControlaTopeDiabetes', id: 'stkm-a-tope',     txt: 'Controla tope de Diabetes',      ayuda: 'Su entrega va a la hoja Entregas y cuenta para los topes' },
-  { k: 'PermiteComodato',      id: 'stkm-a-comodato', txt: 'Permite comodato',               ayuda: 'Puede prestarse y volver' },
-  { k: 'ControlaUnidades',     id: 'stkm-a-unidades', txt: 'Control por unidad individual',  ayuda: 'Se habilita en SEC-1a.3b' }
+  // SEC-1a.3b-1 (D4): "Genera entrega" pasa a significar "se entrega a afiliados desde Stock"
+  { k: 'GeneraEntrega',        id: 'stkm-a-entrega',  txt: 'Se entrega a afiliados',         ayuda: 'Puede entregarse a afiliados desde Stock. A consultorios e instituciones se entrega cualquier artículo con stock (salvo Diabetes)' },
+  { k: 'ControlaTopeDiabetes', id: 'stkm-a-tope',     txt: 'Controla tope de Diabetes',      ayuda: 'Su entrega a afiliados va a la hoja Entregas y cuenta para los topes (SEC-1a.4)' },
+  { k: 'PermiteComodato',      id: 'stkm-a-comodato', txt: 'Permite comodato',               ayuda: 'Puede prestarse y volver (SEC-1a.3b-2)' },
+  { k: 'ControlaUnidades',     id: 'stkm-a-unidades', txt: 'Admite identificación individual', ayuda: 'Códigos opcionales: se habilita en SEC-1a.3b-3' }
 ];
 var STK_BLOQUEADOS_CON_USO = ['ControlaStock', 'ControlaTopeDiabetes', 'ControlaUnidades'];
 
@@ -1699,12 +1764,14 @@ function stkArtPrevia() {
         ? '<div class="stk-aviso ok">✓ Sus entregas van a la hoja Entregas y en los topes contarán como <strong>' + stkEsc(c.tipo) + '</strong> · ' + (c.unidadesPorEnvase || 1) + ' unidad(es) por cada caja entregada.</div>'
         : '<div class="stk-aviso bad">✗ El TextoEntregas debe ser reconocible por los topes actuales (debe contener "tira", "lanceta", "aguja" o "gluc").</div>');
     }
+  } else if (stkVal('stkm-categoria') === 'DIABETES') {   // SEC-1a.3b-1 (D4)
+    partes.push('<div class="stk-aviso warn">Categoría DIABETES: <strong>no se entrega desde Stock</strong> (circuito de Diabetes, SEC-1a.4). Sí se transfiere a seccionales, se da de baja o se ajusta.</div>');
   } else if (cEnt.checked) {
-    partes.push('<div class="stk-aviso">Se entrega a personas, pero <strong>no escribe en la hoja Entregas ni afecta los topes de Diabetes</strong>. Sus entregas quedan en Stock (se habilitan en SEC-1a.3b).</div>');
+    partes.push('<div class="stk-aviso">Se entrega a afiliados desde Stock (con DNI y constancia), pero <strong>no escribe en la hoja Entregas ni afecta los topes de Diabetes</strong>. También puede entregarse a consultorios e instituciones.</div>');
   } else {
-    partes.push('<div class="stk-aviso">No se entrega a personas: sus salidas (uso interno, a un médico, etc.) se registran como SALIDA (SEC-1a.3b).</div>');
+    partes.push('<div class="stk-aviso">No se entrega a afiliados: puede entregarse a consultorios, profesionales o destinatarios institucionales, transferirse o darse de baja.</div>');
   }
-  if (cCom.checked) partes.push('<div class="stk-aviso">Permite comodato: se presta y vuelve (SEC-1a.3b).</div>');
+  if (cCom.checked) partes.push('<div class="stk-aviso">Permite comodato: se presta y vuelve (SEC-1a.3b-2).</div>');
   el.innerHTML = partes.join('');
 }
 
@@ -1820,4 +1887,1136 @@ async function stkGuardarActivoMapeo() {
   if (!r) return;
   if (r.ok) { await stkExito(stkForm.activar ? 'Mapeo activado' : 'Mapeo desactivado'); return; }
   stkModalMsg(r.msg || 'No se pudo guardar.');
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// SEC-1a.3b-1 · ENTREGAS · BAJAS · AJUSTES · CONSTANCIAS · HISTORIAL · COMPRAS · INFORMES
+// ----------------------------------------------------------------------
+// · Historial y compras se filtran EN EL SERVIDOR y llegan paginados: nunca se
+//   trae todo el historial. Nada se consulta hasta abrir la solapa.
+// · Informes PDF: vista A4 que se imprime o se guarda como PDF desde el
+//   navegador. CSV liviano para Excel (UTF-8 con BOM, ";" y coma decimal).
+// · Imprimir NUNCA guarda ni recalcula nada.
+// · Fichas de afiliados: solo se AGREGAN fichas incompletas (DNI que no existe).
+// ══════════════════════════════════════════════════════════════════════
+var STK_TAM_PAGINA = 50;
+var STK_INFORME_AVISO_OPS = 2000;
+
+stkEstado.afiliadosEntregas = [];
+stkEstado.hist = null;
+stkEstado.comp = null;
+
+(function stkInyectarEstilos3b1() {
+  if (typeof document === 'undefined' || document.getElementById('stk-estilos-1a3b1')) return;
+  var st = document.createElement('style');
+  st.id = 'stk-estilos-1a3b1';
+  st.textContent = [
+    '#page-stock .stk-kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-bottom:12px}',
+    '#page-stock .stk-kpi{background:var(--surface,var(--sf));color:var(--text,var(--tx));border:1px solid var(--border,var(--bd));border-radius:10px;padding:10px 12px}',
+    '#page-stock tr.stk-det3b td{background:var(--bg,var(--sf2));color:var(--text,var(--tx));font-size:12px}',
+    '#page-stock .stk-kpi .k{font-size:10.5px;font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:.4px}',
+    '#page-stock .stk-kpi .v{font-size:20px;font-weight:700;margin-top:2px;font-family:"DM Mono",monospace}',
+    '#page-stock .stk-kpi .s{font-size:11.5px;color:var(--tx3);margin-top:2px}',
+    '#page-stock .stk-pag{display:flex;gap:8px;align-items:center;justify-content:flex-end;padding:8px 12px}',
+    '#page-stock .stk-fil-k{font-size:10px;font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}',
+    '#page-stock .stk-fil-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;align-items:end;margin-bottom:10px}',
+    '#page-stock .stk-fil-grid .stk-sel-in{width:100%;box-sizing:border-box}',
+    '#stk-modal .stk-ant{background:var(--sf2);border:1px dashed var(--bd2);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--tx2);margin-bottom:12px}',
+    '#stk-modal .stk-extra td{border-top:none;padding-top:0}',
+    '.stk-enlace{background:none;border:none;color:var(--ac);cursor:pointer;font:inherit;font-weight:600;padding:0;text-align:left}'
+  ].join('\n');
+  document.head.appendChild(st);
+})();
+
+// ── Utilidades ─────────────────────────────────────────────────────────
+function stkMoneda(n) {
+  return '$ ' + (Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function stkDniNorm(v) { return String(v == null ? '' : v).replace(/[\s.\-]/g, ''); }
+
+function stkL(lista, k) {
+  var L = (stkEstado.listas && stkEstado.listas[lista]) || {};
+  return L[k] || k || '';
+}
+
+function stkEsDiabetesCli(a) {
+  return stkVerdadero(a.ControlaTopeDiabetes) || String(a.Categoria || '').toUpperCase() === 'DIABETES';
+}
+
+function stkExtraHtml(datosExtra) {
+  var o = datosExtra;
+  if (typeof o === 'string') { try { o = o ? JSON.parse(o) : null; } catch (e) { o = null; } }
+  if (!o) return '';
+  var campos = stkCamposLista();
+  var t = Object.keys(o).map(function(k) {
+    var v = o[k]; if (v === 'SI') v = 'Sí'; else if (v === 'NO') v = 'No';
+    return (campos[k] ? campos[k].etiqueta : k) + ': ' + v;
+  }).join(' · ');
+  return t ? '<div class="stk-dim" style="font-size:11px">' + stkEsc(t) + '</div>' : '';
+}
+
+function stkExtraTexto(datosExtra) {
+  var o = datosExtra;
+  if (typeof o === 'string') { try { o = o ? JSON.parse(o) : null; } catch (e) { o = null; } }
+  if (!o) return '';
+  var campos = stkCamposLista();
+  return Object.keys(o).map(function(k) {
+    var v = o[k]; if (v === 'SI') v = 'Sí'; else if (v === 'NO') v = 'No';
+    return (campos[k] ? campos[k].etiqueta : k) + ': ' + v;
+  }).join(' · ');
+}
+
+function stkEsAfiTipo(td) { return td === 'AFILIADO' || td === 'AFILIADO_SECCIONAL'; }
+
+// Texto de recorrido de una operación (los tipos de 1a.3a conservan su texto)
+function stkRecorridoOp(op) {
+  if (op.tipo === 'TRANSFERENCIA') return stkNombreUbic(op.origen) + ' → ' + stkNombreUbic(op.destino);
+  if (op.tipo === 'ENTREGA') return stkNombreUbic(op.origen) + ' → ' + (op.destinatario || '—') + (op.seccional ? ' (' + stkNombreUbic(op.seccional) + ')' : '');
+  if (op.tipo === 'BAJA') return stkNombreUbic(op.origen) + ' → baja: ' + stkL('causasBaja', op.causa);
+  if (op.tipo === 'AJUSTE') return 'Ajuste en ' + stkNombreUbic(op.origen || op.destino);
+  return '→ ' + stkNombreUbic(op.destino);
+}
+
+function stkDetalleOp3b(op) {
+  if (op.tipo === 'ENTREGA') return 'a ' + (op.destinatario || '—') + (op.seccional ? ' (' + stkNombreUbic(op.seccional) + ')' : '');
+  if (op.tipo === 'BAJA') return 'Baja: ' + stkL('causasBaja', op.causa) + (op.motivo ? ' · ' + op.motivo : '');
+  if (op.tipo === 'AJUSTE') return 'Ajuste: ' + (op.motivo || '');
+  return '';
+}
+
+function stkDetalleMov3b(m) {
+  var t = stkCampo(m, 'Tipo');
+  if (t === 'ENTREGA') return 'a ' + stkCampo(m, 'Destinatario') + (stkCampo(m, 'SeccionalDestino') ? ' (' + stkNombreUbic(stkCampo(m, 'SeccionalDestino')) + ')' : '');
+  if (t === 'BAJA') return 'Baja: ' + stkL('causasBaja', stkCampo(m, 'Causa')) + (stkCampo(m, 'Motivo') ? ' · ' + stkCampo(m, 'Motivo') : '');
+  if (t === 'AJUSTE') return 'Ajuste: ' + stkCampo(m, 'Motivo');
+  return '';
+}
+
+// Cabecera de entrega / baja / ajuste dentro del detalle de Movimientos
+function stkCabecera3bHtml(op) {
+  if (op.tipo === 'ENTREGA') {
+    return '<div class="stk-dim" style="margin-top:6px">Destinatario: ' + stkDestinatarioHtml(op.destinatario, op.dni, op.seccional, op.tipoDestinatario) +
+      ' · ' + stkEsc(stkL('tiposDestinatario', op.tipoDestinatario)) + (op.seccional ? ' · Seccional: ' + stkEsc(stkNombreUbic(op.seccional)) : '') +
+      ' · Retira: ' + stkEsc(stkL('retira', op.retira) + (op.retiraDetalle ? ' (' + op.retiraDetalle + ')' : '')) + '</div>';
+  }
+  if (op.tipo === 'BAJA') return '<div class="stk-dim" style="margin-top:6px">Causa: ' + stkEsc(stkL('causasBaja', op.causa)) + (op.motivo ? ' · Motivo: ' + stkEsc(op.motivo) : '') + '</div>';
+  if (op.tipo === 'AJUSTE') return '<div class="stk-dim" style="margin-top:6px">Motivo del ajuste: ' + stkEsc(op.motivo) + '</div>';
+  return '';
+}
+
+// Nombre del destinatario; si es afiliado, enlace a su ficha en Afiliados
+function stkDestinatarioHtml(nombre, dni, seccional, td) {
+  if (!stkEsAfiTipo(td) || !dni) return '<span>' + stkEsc(nombre || '—') + '</span>';
+  var ref = stkRef({ dni: dni, nombre: nombre, seccional: seccional });
+  return '<button class="stk-enlace" title="Abrir la ficha en Afiliados" onclick="stkIrAfiliado(stkRefs[' + ref + '])">' + stkEsc(nombre || dni) + '</button>' +
+    ' <span class="mono stk-dim">DNI ' + stkEsc(dni) + '</span>';
+}
+
+function stkInvalidarConsultas() {
+  if (stkEstado.hist) stkEstado.hist.res = null;
+  if (stkEstado.comp) stkEstado.comp.res = null;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// AFILIADOS: búsqueda, fichas incompletas y navegación (D8)
+// ══════════════════════════════════════════════════════════════════════
+function stkPacientes() {
+  try { if (typeof DB !== 'undefined' && DB && Array.isArray(DB.pacientes)) return DB.pacientes; } catch (e) {}
+  return null;
+}
+
+function stkBuscarAfiliado(dni) {
+  var P = stkPacientes(), d = stkDniNorm(dni);
+  if (!P || !d) return null;
+  for (var i = 0; i < P.length; i++) if (stkDniNorm(P[i].dni) === d) return P[i];
+  return null;
+}
+
+// Agrega fichas incompletas para los DNI que no existen. Nunca modifica fichas existentes.
+function stkAsegurarFichas(lista) {
+  var P = stkPacientes();
+  if (!P) return 0;
+  var vistos = {};
+  P.forEach(function(p) { vistos[stkDniNorm(p.dni)] = true; });
+  var nuevos = 0;
+  (lista || []).forEach(function(x) {
+    var d = stkDniNorm(x.dni);
+    if (!/^\d{6,9}$/.test(d) || vistos[d] || !String(x.nombre || '').trim()) return;
+    vistos[d] = true;
+    P.push({ nombre: String(x.nombre).trim(), dni: d, programa: '', patologia: '',
+             seccional: x.seccional ? stkNombreUbic(x.seccional) : '', localidad: '', telefono: '',
+             _incompleto: true, _incompleto_origen: 'STOCK' });
+    nuevos++;
+  });
+  if (nuevos && typeof saveDB === 'function') { try { saveDB(); } catch (e) {} }
+  return nuevos;
+}
+
+// Recupera fichas a partir de las entregas activas del servidor (en cualquier computadora)
+function stkRecuperarFichas() {
+  var n = stkAsegurarFichas(stkEstado.afiliadosEntregas || []);
+  if (n) stkAviso(n + ' ficha(s) incompleta(s) de afiliados recuperada(s) desde las entregas de Stock. Completalas en Afiliados.', 'ok');
+  return n;
+}
+
+function stkIrAfiliado(ref) {
+  if (!ref) return;
+  if (typeof nav !== 'function' || typeof openAfiliadoModal !== 'function' || !stkPacientes()) { stkAviso('No se pudo abrir Afiliados.', 'err'); return; }
+  var p = stkBuscarAfiliado(ref.dni);
+  if (!p) { stkAsegurarFichas([ref]); p = stkBuscarAfiliado(ref.dni); }
+  if (!p) { stkAviso('El DNI ' + ref.dni + ' no tiene ficha en Afiliados.', 'err'); return; }
+  nav('afiliados');
+  stkMostrarVolver();
+  openAfiliadoModal(p.dni);   // el DNI tal como está guardado en la ficha
+}
+
+function stkMostrarVolver() {
+  var pg = document.getElementById('page-afiliados');
+  if (!pg) return;
+  var bar = document.getElementById('stk-volver');
+  if (!bar) { bar = document.createElement('div'); bar.id = 'stk-volver'; pg.insertBefore(bar, pg.firstChild); }
+  var t = { historial: '📤 Historial de entregas', movimientos: '🔁 Movimientos', stock: '📦 Stock' }[stkEstado.tab] || 'Stock';
+  bar.innerHTML = '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--sf2);border:1px solid var(--bd2);border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12.5px">' +
+    '<button class="btn bp bsm" onclick="stkVolverAStock()">← Volver a Stock · ' + stkEsc(t) + '</button>' +
+    '<span style="color:var(--tx2)">Se conservan la solapa, la consulta y los filtros.</span><span style="flex:1"></span>' +
+    '<button class="btn bs bsm" title="Ocultar" onclick="stkOcultarVolver()">✕</button></div>';
+}
+
+function stkOcultarVolver() {
+  var bar = document.getElementById('stk-volver');
+  if (bar) bar.remove();
+}
+
+function stkVolverAStock() {
+  stkOcultarVolver();
+  try { if (typeof closeMo === 'function') closeMo('mo-afiliado'); } catch (e) {}
+  if (typeof nav === 'function') nav('stock');
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// FORMULARIO: ENTREGA / BAJA / AJUSTE
+// ══════════════════════════════════════════════════════════════════════
+function stkArticulosEntregables(td) {
+  return stkArticulosOperables().filter(function(a) {
+    return !stkEsDiabetesCli(a) && (!stkEsAfiTipo(td) || stkVerdadero(a.GeneraEntrega));
+  });
+}
+
+function stkOpcionesDe(lista, sel) {
+  var cats = {};
+  lista.forEach(function(a) { var k = String(a.Categoria || 'OTRO'); (cats[k] = cats[k] || []).push(a); });
+  var orden = STK_ORDEN_CATEGORIAS.filter(function(k) { return cats[k]; }).concat(Object.keys(cats).filter(function(k) { return STK_ORDEN_CATEGORIAS.indexOf(k) < 0; }));
+  return '<option value="">— Elegí un artículo —</option>' + orden.map(function(k) {
+    return '<optgroup label="' + stkEsc(k) + '">' + cats[k].map(function(a) {
+      var id = stkCampo(a, 'ID');
+      return '<option value="' + stkEsc(id) + '"' + (id === sel ? ' selected' : '') + '>' + stkEsc(a.Nombre) + ' (' + stkEsc(a.Unidad) + ')</option>';
+    }).join('') + '</optgroup>';
+  }).join('');
+}
+
+function stkOpcionesLista(lista, sel, vacio) {
+  var L = (stkEstado.listas && stkEstado.listas[lista]) || {};
+  return (vacio ? '<option value="">' + stkEsc(vacio) + '</option>' : '') + Object.keys(L).map(function(k) { return stkOpt(k, L[k], sel); }).join('');
+}
+
+function stkAbrirEntrega() { stkAbrirOperacion3b('ENTREGA'); }
+
+function stkAbrirOperacion3b(tipo) {
+  var hoy = stkEstado.hoy || '', corte = stkEstado.analisis.corte;
+  stkForm = { clase: 'op3b', tipo: tipo, reqId: stkNuevoReqId(), lineas: [{ articuloId: '', cantidad: '', sentido: 'MAS', extra: {} }], antSeq: 0, antTimer: null };
+  var h = '<div class="stk-grid">' +
+    '<div><div class="stk-k">Fecha' + (tipo === 'ENTREGA' ? ' de entrega' : '') + '</div><input type="date" class="stk-in" id="stkm-fecha" min="' + stkEsc(corte) + '"' + (hoy ? ' max="' + stkEsc(hoy) + '"' : '') +
+      ' value="' + stkEsc(hoy) + '" onchange="stkRecalcular3b()"></div>' +
+    '<div><div class="stk-k">' + (tipo === 'ENTREGA' ? 'Desde (ubicación de origen)' : 'Ubicación') + '</div><select class="stk-in" id="stkm-ubic" onchange="stkRecalcular3b()">' + stkOpcionesUbic('CENTRAL') + '</select></div>';
+  if (tipo === 'ENTREGA') {
+    var dests = {};
+    stkEstado.movs.forEach(function(m) {
+      var t = stkCampo(m, 'TipoDestinatario');
+      if (stkCampo(m, 'Tipo') === 'ENTREGA' && (t === 'CONSULTORIO' || t === 'INSTITUCIONAL') && stkCampo(m, 'Destinatario')) dests[stkCampo(m, 'Destinatario')] = true;
+    });
+    h += '<div><div class="stk-k">Tipo de destinatario</div><select class="stk-in" id="stkm-td" onchange="stkEntCambioTipo()">' + stkOpcionesLista('tiposDestinatario', 'AFILIADO') + '</select></div>' +
+      '<div><div class="stk-k" id="stkm-sec-k">Seccional asociada (opcional)</div><select class="stk-in" id="stkm-sec">' +
+        '<option value="">— Sin seccional —</option>' + stkOpcionesUbic('', false) + '</select></div>' +
+      '<div id="stkm-afi-dni"><div class="stk-k">DNI del afiliado</div><input class="stk-in mono" id="stkm-dni" inputmode="numeric" maxlength="12" oninput="stkEntDni()"></div>' +
+      '<div id="stkm-afi-nom" style="grid-column:span 2"><div class="stk-k">Nombre y apellido</div><input class="stk-in" id="stkm-nombre" maxlength="120" oninput="stkEntAnterioresProgramar()"></div>' +
+      '<div id="stkm-afi-info" style="grid-column:1/-1;display:none"></div>' +
+      '<div id="stkm-otro" style="grid-column:span 2;display:none"><div class="stk-k">Destinatario (consultorio, profesional o institución)</div>' +
+        '<input class="stk-in" id="stkm-dest" maxlength="120" list="stkm-dests" placeholder="Ej.: Consultorio de Ginecología – Dra. Pérez" oninput="stkEntAnterioresProgramar()">' +
+        '<datalist id="stkm-dests">' + Object.keys(dests).sort().map(function(x) { return '<option value="' + stkEsc(x) + '">'; }).join('') + '</datalist></div>' +
+      '<div><div class="stk-k">Retira / medio de envío</div><select class="stk-in" id="stkm-retira" onchange="stkEntRetira()">' + stkOpcionesLista('retira', 'AFILIADO', '— Elegí —') + '</select></div>' +
+      '<div><div class="stk-k" id="stkm-retdet-k">Detalle (opcional)</div><input class="stk-in" id="stkm-retdet" maxlength="120" placeholder="Nombre, remís, Nº de envío…"></div>' +
+      '<div><div class="stk-k">Constancia firmada</div><select class="stk-in" id="stkm-con" onchange="stkEntCon()">' + stkOpcionesLista('estadosConstancia', 'PENDIENTE') + '</select></div>' +
+      '<div id="stkm-confr-w" style="display:none"><div class="stk-k">Fecha de recepción</div><input type="date" class="stk-in" id="stkm-confr"' + (hoy ? ' max="' + stkEsc(hoy) + '"' : '') + '></div>';
+  } else if (tipo === 'BAJA') {
+    h += '<div><div class="stk-k">Causa</div><select class="stk-in" id="stkm-causa" onchange="stkBajaCausa()">' + stkOpcionesLista('causasBaja', '', '— Elegí —') + '</select></div>' +
+      '<div style="grid-column:span 2"><div class="stk-k" id="stkm-motivo-k">Detalle (opcional)</div><input class="stk-in" id="stkm-motivo" maxlength="500"></div>';
+  } else {
+    h += '<div style="grid-column:span 2"><div class="stk-k">Motivo del ajuste (obligatorio)</div><input class="stk-in" id="stkm-motivo" maxlength="500" placeholder="Ej.: recuento físico del 15/05"></div>';
+  }
+  h += '<div style="grid-column:1/-1"><div class="stk-k">Observación</div><input class="stk-in" id="stkm-obs" maxlength="500"></div></div>';
+  if (tipo === 'ENTREGA') h += '<div id="stkm-ant" class="stk-ant" style="display:none"></div>';
+  h += '<div class="stk-k" style="margin-top:4px">Artículos</div><div id="stkm-lineas"></div>' +
+    '<button class="btn bs bsm" style="margin-top:8px" onclick="stkAgregarLinea3b()">+ Agregar artículo</button>' +
+    (tipo === 'ENTREGA' ? '<div class="stk-dim" style="margin-top:8px">Los insumos de Diabetes no aparecen: se entregan por su circuito (hoja Entregas, SEC-1a.4). Para enviar una reserva a una seccional usá <strong>Transferencia</strong>.</div>' : '') +
+    (tipo === 'AJUSTE' ? '<div class="stk-dim" style="margin-top:8px">El ajuste queda auditado con fecha, cantidades, saldo antes y después y el motivo. El acceso es compartido: el registro no identifica a una persona.</div>' : '') +
+    '<div id="stkm-adv" style="margin-top:12px"></div><div id="stkm-msg" class="stk-msg"></div>';
+  var titulo = { ENTREGA: 'Nueva entrega', BAJA: 'Nueva baja de stock', AJUSTE: 'Nuevo ajuste de stock' }[tipo];
+  stkModalAbrir(titulo, h, stkPieGuardar(tipo === 'ENTREGA' ? 'Registrar entrega' : tipo === 'BAJA' ? 'Registrar baja' : 'Registrar ajuste'));
+  if (tipo === 'ENTREGA') stkEntCambioTipo(); else stkRenderLineas3b();
+}
+
+function stkEntTipo() { return stkVal('stkm-td'); }
+
+function stkEntCambioTipo() {
+  var td = stkEntTipo(), afi = stkEsAfiTipo(td);
+  ['stkm-afi-dni', 'stkm-afi-nom'].forEach(function(id) { var el = document.getElementById(id); if (el) el.style.display = afi ? '' : 'none'; });
+  var ot = document.getElementById('stkm-otro'); if (ot) ot.style.display = afi ? 'none' : '';
+  var info = document.getElementById('stkm-afi-info'); if (info && !afi) info.style.display = 'none';
+  var k = document.getElementById('stkm-sec-k');
+  if (k) k.textContent = td === 'AFILIADO_SECCIONAL' ? 'Seccional (obligatoria)' : 'Seccional asociada (opcional)';
+  var ret = document.getElementById('stkm-retira');
+  if (ret) ret.value = td === 'AFILIADO' ? 'AFILIADO' : td === 'AFILIADO_SECCIONAL' ? 'SECCIONAL' : '';
+  var con = document.getElementById('stkm-con');
+  if (con) con.value = (td === 'CONSULTORIO' || td === 'INSTITUCIONAL') ? 'NO_CORRESPONDE' : 'PENDIENTE';
+  stkEntCon(); stkEntRetira();
+  // Artículos que ya no corresponden a este tipo de destinatario
+  var ok = {}, quitados = 0;
+  stkArticulosEntregables(td).forEach(function(a) { ok[stkCampo(a, 'ID')] = true; });
+  stkForm.lineas.forEach(function(l) { if (l.articuloId && !ok[l.articuloId]) { l.articuloId = ''; l.extra = {}; quitados++; } });
+  stkRenderLineas3b();
+  stkModalMsg(quitados ? quitados + ' artículo(s) se quitaron porque no se entregan a este tipo de destinatario.' : '', 'info');
+  if (afi) stkEntDni(); else stkEntAnterioresProgramar();
+}
+
+function stkEntRetira() {
+  var k = document.getElementById('stkm-retdet-k');
+  if (k) k.textContent = stkVal('stkm-retira') === 'OTRO' ? 'Detalle (obligatorio)' : 'Detalle (opcional)';
+}
+
+function stkEntCon() {
+  var w = document.getElementById('stkm-confr-w'), rec = stkVal('stkm-con') === 'RECIBIDA';
+  if (w) w.style.display = rec ? '' : 'none';
+  var fr = document.getElementById('stkm-confr');
+  if (fr && rec && !fr.value) fr.value = stkVal('stkm-fecha');
+}
+
+function stkBajaCausa() {
+  var k = document.getElementById('stkm-motivo-k');
+  if (k) k.textContent = stkVal('stkm-causa') === 'OTRO' ? 'Motivo (obligatorio con "Otro")' : 'Detalle (opcional)';
+}
+
+function stkEntDni() {
+  var info = document.getElementById('stkm-afi-info'), nom = document.getElementById('stkm-nombre');
+  if (!info || !nom) return;
+  var d = stkDniNorm(stkVal('stkm-dni'));
+  if (!d) { info.style.display = 'none'; nom.readOnly = false; stkEntAnterioresProgramar(); return; }
+  if (!/^\d{6,9}$/.test(d)) {
+    info.style.display = ''; info.innerHTML = '<div class="stk-aviso warn" style="margin:0">El DNI debe tener entre 6 y 9 números (sin puntos).</div>';
+    nom.readOnly = false; stkEntAnterioresProgramar(); return;
+  }
+  var p = stkBuscarAfiliado(d);
+  info.style.display = '';
+  if (p) {
+    nom.value = p.nombre || ''; nom.readOnly = true;
+    info.innerHTML = '<div class="stk-aviso ok" style="margin:0">✓ Afiliado registrado en MediGestión' + (p.seccional ? ' · Seccional: ' + stkEsc(p.seccional) : '') +
+      (p._incompleto ? ' · <strong>ficha incompleta</strong>' : '') + '. Sus datos se administran en Afiliados.</div>';
+  } else {
+    if (nom.readOnly) nom.value = '';
+    nom.readOnly = false;
+    info.innerHTML = '<div class="stk-aviso" style="margin:0">Este DNI no tiene ficha. Ingresá nombre y apellido: al guardar la entrega se crea una <strong>ficha incompleta</strong> en Afiliados, para completarla después.</div>';
+  }
+  stkEntAnterioresProgramar();
+}
+
+// Entregas anteriores al mismo destinatario (informativo; nunca bloquea)
+function stkEntAnterioresProgramar() {
+  if (!stkForm || stkForm.tipo !== 'ENTREGA') return;
+  clearTimeout(stkForm.antTimer);
+  stkForm.antTimer = setTimeout(stkEntAnteriores, 450);
+}
+
+async function stkEntAnteriores() {
+  var f = stkForm;
+  if (!f || f.tipo !== 'ENTREGA') return;
+  var el = document.getElementById('stkm-ant');
+  if (!el) return;
+  var afi = stkEsAfiTipo(stkEntTipo());
+  var q = afi ? { dni: stkDniNorm(stkVal('stkm-dni')) } : { destinatario: String(stkVal('stkm-dest')).trim() };
+  if ((afi && !/^\d{6,9}$/.test(q.dni)) || (!afi && q.destinatario.length < 3)) { el.style.display = 'none'; return; }
+  var seq = ++f.antSeq;
+  el.style.display = ''; el.textContent = 'Buscando entregas anteriores…';
+  var r;
+  try { r = await stkApi('stk_entregasAnteriores', q); } catch (e) { r = { ok: false, msg: e.message }; }
+  if (stkForm !== f || seq !== f.antSeq) return;   // respuesta vieja
+  if (!r || !r.ok) { el.textContent = 'No se pudieron consultar las entregas anteriores (no impide registrar).'; return; }
+  var arts = stkArtMap();
+  el.innerHTML = r.ops.length
+    ? '<strong>Entregas anteriores a este destinatario</strong> (informativo)' + (r.total > r.ops.length ? ' · últimas ' + r.ops.length + ' de ' + r.total : '') +
+      '<ul style="margin:6px 0 0 18px">' + r.ops.map(function(o) {
+        return '<li>' + stkFmtFecha(o.fecha) + ' <span class="stk-dim">(hace ' + o.dias + ' día' + (o.dias === 1 ? '' : 's') + ')</span> · ' +
+          stkEsc(o.lineas.map(function(l) { var a = arts[l.articuloId]; return (a ? a.Nombre : l.articuloId) + ' × ' + stkCant(l.cantidad, a); }).join(' · ')) +
+          ' <span class="stk-dim">desde ' + stkEsc(stkNombreUbic(o.origen)) + '</span></li>';
+      }).join('') + '</ul><div class="stk-dim" style="margin-top:4px">No incluye insumos de Diabetes de la hoja Entregas.</div>'
+    : 'Sin entregas anteriores registradas en Stock para este destinatario.';
+}
+
+function stkRenderLineas3b() {
+  var f = stkForm, tipo = f.tipo;
+  var lista = tipo === 'ENTREGA' ? stkArticulosEntregables(stkEntTipo()) : stkArticulosOperables();
+  var amap = stkArtMap(), campos = stkCamposLista();
+  var cols = tipo === 'AJUSTE' ? 5 : 4;
+  document.getElementById('stkm-lineas').innerHTML = '<div class="tw"><table class="stk-lineas"><thead><tr><th>Artículo</th>' +
+    (tipo === 'AJUSTE' ? '<th style="width:120px">Suma / resta</th>' : '') + '<th style="width:110px">Cantidad</th>' +
+    '<th style="width:190px">' + (tipo === 'AJUSTE' ? 'Saldo actual → resultante' : 'Disponible') + '</th><th></th></tr></thead><tbody>' +
+    f.lineas.map(function(l, i) {
+      var a = amap[l.articuloId];
+      var cs = a ? String(stkCampo(a, 'CamposEntrega')).split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+      var fila = '<tr><td><select class="stk-in" onchange="stkLinea3b(' + i + ',\'articuloId\',this.value)">' + stkOpcionesDe(lista, l.articuloId) + '</select></td>' +
+        (tipo === 'AJUSTE' ? '<td><select class="stk-in" onchange="stkLinea3b(' + i + ',\'sentido\',this.value)">' + stkOpt('MAS', '+ Suma', l.sentido) + stkOpt('MENOS', '− Resta', l.sentido) + '</select></td>' : '') +
+        '<td><input class="stk-in stk-num" inputmode="numeric" value="' + stkEsc(l.cantidad) + '" oninput="stkLinea3b(' + i + ',\'cantidad\',this.value)"></td>' +
+        '<td class="stk-dim" id="stkm-disp-' + i + '"></td>' +
+        '<td>' + (f.lineas.length > 1 ? '<button class="btn bs bsm" title="Quitar" onclick="stkQuitarLinea3b(' + i + ')">✕</button>' : '') + '</td></tr>';
+      if (tipo === 'ENTREGA' && cs.length) {
+        fila += '<tr class="stk-extra"><td colspan="' + cols + '"><div class="stk-acciones">' + cs.map(function(k) {
+          var def = campos[k] || { etiqueta: k, tipo: 'texto' }, v = (l.extra || {})[k] || '';
+          return '<div style="min-width:220px;flex:1"><div class="stk-k">' + stkEsc(def.etiqueta) + ' (opcional)</div>' +
+            (def.tipo === 'sino'
+              ? '<select class="stk-in" onchange="stkLineaExtra(' + i + ',\'' + k + '\',this.value)">' + stkOpt('', '—', v) + stkOpt('SI', 'Sí', v) + stkOpt('NO', 'No', v) + '</select>'
+              : '<input class="stk-in" maxlength="200" value="' + stkEsc(v) + '" oninput="stkLineaExtra(' + i + ',\'' + k + '\',this.value)">') + '</div>';
+        }).join('') + '</div></td></tr>';
+      }
+      return fila;
+    }).join('') + '</tbody></table></div>';
+  stkRecalcular3b();
+}
+
+function stkAgregarLinea3b() { stkForm.lineas.push({ articuloId: '', cantidad: '', sentido: 'MAS', extra: {} }); stkRenderLineas3b(); }
+function stkQuitarLinea3b(i) { stkForm.lineas.splice(i, 1); stkRenderLineas3b(); }
+
+function stkLinea3b(i, campo, valor) {
+  var l = stkForm.lineas[i];
+  l[campo] = valor;
+  if (campo === 'articuloId') { l.extra = {}; stkRenderLineas3b(); return; }
+  stkRecalcular3b();
+}
+
+function stkLineaExtra(i, k, v) {
+  var l = stkForm.lineas[i];
+  l.extra = l.extra || {};
+  l.extra[k] = v;
+}
+
+function stkCambios3b() {
+  var f = stkForm, fecha = stkVal('stkm-fecha'), U = stkVal('stkm-ubic');
+  return f.lineas.filter(function(l) {
+    return l.articuloId && /^\d+$/.test(String(l.cantidad).trim()) && Number(l.cantidad) > 0 && (f.tipo !== 'AJUSTE' || l.sentido === 'MENOS');
+  }).map(function(l) { return { ubicacion: U, articuloId: l.articuloId, fecha: fecha, delta: -Number(l.cantidad) }; });
+}
+
+function stkRecalcular3b() {
+  var f = stkForm;
+  if (!f || f.clase !== 'op3b') return;
+  var fecha = stkVal('stkm-fecha'), U = stkVal('stkm-ubic');
+  var alDia = stkSaldos(fecha)[U] || {}, actual = stkSaldos('')[U] || {}, arts = stkArtMap();
+  f.lineas.forEach(function(l, i) {
+    var el = document.getElementById('stkm-disp-' + i);
+    if (!el) return;
+    if (!l.articuloId) { el.textContent = ''; return; }
+    var a = arts[l.articuloId];
+    if (f.tipo === 'AJUSTE') {
+      var c = /^\d+$/.test(String(l.cantidad).trim()) ? Number(l.cantidad) : 0, s = actual[l.articuloId] || 0;
+      el.textContent = stkCant(s, a) + ' → ' + (s + (l.sentido === 'MENOS' ? -c : c)).toLocaleString('es-AR');
+    } else {
+      el.textContent = stkCant(alDia[l.articuloId] || 0, a) + (fecha ? ' al ' + stkFmtFecha(fecha) : '');
+    }
+  });
+  var adv = document.getElementById('stkm-adv');
+  if (!adv) return;
+  var det = (U && fecha) ? stkVerificarSaldosCli(stkEstado.movs, stkCambios3b()) : [];
+  var modo = stkEstado.datos.config && stkEstado.datos.config.modoCargaInicial;
+  f.faltantes = det;
+  if (!det.length) { adv.innerHTML = ''; return; }
+  adv.innerHTML = modo
+    ? '<div class="stk-aviso warn">⚠ Saldo insuficiente. Con el <strong>modo carga inicial activo</strong> se registra igual y queda la advertencia en auditoría.' + stkDetalleSaldos(det) + '</div>'
+    : stkConfirmacionHtml('⚠ Saldo insuficiente.' + stkDetalleSaldos(det), true);
+}
+
+async function stkGuardarOperacion3b() {
+  var f = stkForm, tipo = f.tipo;
+  var enc = { fecha: stkVal('stkm-fecha'), ubicacion: stkVal('stkm-ubic'), observacion: stkVal('stkm-obs') };
+  if (!enc.fecha) { stkModalMsg('Indicá la fecha.'); return; }
+  if (!enc.ubicacion) { stkModalMsg('Indicá la ubicación.'); return; }
+  var afi = false;
+  if (tipo === 'ENTREGA') {
+    enc.tipoDestinatario = stkEntTipo(); afi = stkEsAfiTipo(enc.tipoDestinatario);
+    enc.seccional = stkVal('stkm-sec');
+    if (enc.tipoDestinatario === 'AFILIADO_SECCIONAL' && !enc.seccional) { stkModalMsg('Indicá la seccional por la que se entrega.'); return; }
+    if (afi) {
+      enc.dni = stkDniNorm(stkVal('stkm-dni')); enc.destinatario = String(stkVal('stkm-nombre')).trim();
+      if (!/^\d{6,9}$/.test(enc.dni)) { stkModalMsg('DNI inválido: solo números, de 6 a 9 dígitos.'); return; }
+      if (!enc.destinatario) { stkModalMsg('Indicá el nombre y apellido del afiliado.'); return; }
+    } else {
+      enc.destinatario = String(stkVal('stkm-dest')).trim();
+      if (!enc.destinatario) { stkModalMsg('Indicá el destinatario.'); return; }
+    }
+    enc.retira = stkVal('stkm-retira'); enc.retiraDetalle = stkVal('stkm-retdet');
+    if (!enc.retira) { stkModalMsg('Indicá quién retira o el medio de envío.'); return; }
+    if (enc.retira === 'OTRO' && !String(enc.retiraDetalle).trim()) { stkModalMsg('Con "Otro", detallá quién retira o cómo se envía.'); return; }
+    enc.constancia = stkVal('stkm-con');
+    if (enc.constancia === 'RECIBIDA') enc.fechaRecepcion = stkVal('stkm-confr') || enc.fecha;
+  } else if (tipo === 'BAJA') {
+    enc.causa = stkVal('stkm-causa'); enc.motivo = stkVal('stkm-motivo');
+    if (!enc.causa) { stkModalMsg('Elegí la causa de la baja.'); return; }
+    if (enc.causa === 'OTRO' && !String(enc.motivo).trim()) { stkModalMsg('Con la causa "Otro", el motivo es obligatorio.'); return; }
+  } else {
+    enc.motivo = stkVal('stkm-motivo');
+    if (!String(enc.motivo).trim()) { stkModalMsg('El motivo del ajuste es obligatorio.'); return; }
+  }
+  var lineas = [], vistos = {};
+  for (var i = 0; i < f.lineas.length; i++) {
+    var l = f.lineas[i];
+    if (!l.articuloId && !String(l.cantidad).trim()) continue;
+    if (!l.articuloId) { stkModalMsg('Línea ' + (i + 1) + ': elegí el artículo.'); return; }
+    if (vistos[l.articuloId]) { stkModalMsg('Hay un artículo repetido. Sumá las cantidades en una sola línea.'); return; }
+    vistos[l.articuloId] = true;
+    if (!/^\d+$/.test(String(l.cantidad).trim()) || Number(l.cantidad) <= 0) { stkModalMsg('Línea ' + (i + 1) + ': la cantidad debe ser un entero mayor a 0.'); return; }
+    var lin = { articuloId: l.articuloId, cantidad: Number(l.cantidad) };
+    if (tipo === 'AJUSTE') lin.sentido = l.sentido;
+    if (tipo === 'ENTREGA' && l.extra && Object.keys(l.extra).length) lin.datosExtra = l.extra;
+    lineas.push(lin);
+  }
+  if (!lineas.length) { stkModalMsg('Cargá al menos un artículo con cantidad mayor a 0.'); return; }
+  var payload = { tipo: tipo, encabezado: enc, lineas: lineas };
+  if (document.getElementById('stkm-confirmar')) {
+    payload.confirmaStock = stkChk('stkm-conf-chk');
+    payload.motivoStock = stkVal('stkm-conf-motivo');
+    if (!payload.confirmaStock || !String(payload.motivoStock).trim()) { stkModalMsg('Para continuar con saldo insuficiente, confirmá e indicá el motivo.'); return; }
+  }
+  var r = await stkEnviar('stk_registrarOperacion', payload);
+  if (!r) return;
+  if (r.ok) {
+    var extra = '';
+    if (tipo === 'ENTREGA' && afi) {
+      var n = stkAsegurarFichas([{ dni: enc.dni, nombre: enc.destinatario, seccional: enc.seccional }]);
+      if (n) extra = ' · se creó una ficha incompleta en Afiliados';
+    }
+    var nombre = { ENTREGA: 'Entrega', BAJA: 'Baja', AJUSTE: 'Ajuste' }[tipo];
+    await stkExito((r.repetido ? nombre + ' ya registrada' : nombre + ' registrada') + ' · ' + r.lineas + ' artículo(s)' +
+      (r.advertencias && r.advertencias.length ? ' · con advertencia de saldo' : '') + extra);
+    return;
+  }
+  if (r.code === 'STOCK_INSUFICIENTE') {
+    document.getElementById('stkm-adv').innerHTML = stkConfirmacionHtml('⚠ ' + stkEsc(r.msg) + stkDetalleSaldos(r.detalle || []), true);
+    stkModalMsg('Revisá la advertencia de saldo.');
+    return;
+  }
+  stkModalMsg(r.msg || 'No se pudo guardar.');
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// SOLAPA 📤 HISTORIAL DE ENTREGAS (filtrado y paginado en el servidor)
+// ══════════════════════════════════════════════════════════════════════
+function stkHistFiltrosIniciales() {
+  var hoy = stkEstado.hoy || new Date().toISOString().slice(0, 10);
+  return { desde: hoy.slice(0, 8) + '01', hasta: hoy, seccional: '', origen: '', tipoDestinatario: '', destinatario: '', afiliado: '', articulo: '', constancia: '', anuladas: false };
+}
+
+function stkHist() {
+  if (!stkEstado.hist) stkEstado.hist = { filtros: stkHistFiltrosIniciales(), res: null, cargando: false, error: '', abiertas: {}, pagina: 1, seq: 0 };
+  return stkEstado.hist;
+}
+
+function stkHistSet(k, v) { stkHist().filtros[k] = v; }
+
+async function stkHistBuscar(pagina) {
+  var H = stkHist();
+  if (H.filtros.desde && H.filtros.hasta && H.filtros.desde > H.filtros.hasta) { H.error = 'La fecha "desde" es posterior a "hasta".'; renderStkPage(); return; }
+  H.cargando = true; H.error = ''; H.pagina = pagina || 1;
+  var seq = ++H.seq;
+  renderStkPage();
+  var r;
+  try { r = await stkApi('stk_consultarEntregas', { filtros: H.filtros, pagina: H.pagina, tam: STK_TAM_PAGINA }); }
+  catch (e) { r = { ok: false, msg: e.message || String(e) }; }
+  if (seq !== H.seq) return;
+  H.cargando = false;
+  if (r.code === 'SESION_INVALIDA') { stkEstado.datos = null; stkEstado.aviso = r.msg; renderStkPage(); return; }
+  if (!r.ok) { H.error = r.msg || 'No se pudo consultar el historial.'; H.res = null; }
+  else { H.res = r; H.abiertas = {}; }
+  renderStkPage();
+}
+
+function stkHistLimpiar() {
+  var H = stkHist();
+  H.filtros = stkHistFiltrosIniciales();
+  stkHistBuscar(1);
+}
+
+function stkHistSoloPendientes() {
+  var H = stkHist();
+  H.filtros.constancia = 'PENDIENTE';
+  stkHistBuscar(1);
+}
+
+function stkHistToggle(id) {
+  var H = stkHist();
+  H.abiertas[id] = !H.abiertas[id];
+  renderStkPage();
+}
+
+function stkFiltroCampo(etq, html) { return '<div><div class="stk-fil-k">' + etq + '</div>' + html + '</div>'; }
+
+function stkConstanciaHtml(c) {
+  if (!c) return '<span class="stk-dim">—</span>';
+  var t = stkL('estadosConstancia', c.estado);
+  if (c.estado === 'PENDIENTE') return '<span class="b bo">⏳ ' + stkEsc(t) + '</span>';
+  if (c.estado === 'RECIBIDA') return '<span class="b bg" title="' + stkEsc(c.observacion || '') + '">✓ ' + stkEsc(t) + (c.fechaRecepcion ? ' ' + stkFmtFecha(c.fechaRecepcion) : '') + '</span>';
+  return '<span class="b bgr">' + stkEsc(t) + '</span>';
+}
+
+function renderStkHistorial(c) {
+  var H = stkHist(), F = H.filtros;
+  if (!H.res && !H.cargando && !H.error) { stkHistBuscar(1); c.innerHTML = '<div class="stk-vacio">⏳ Consultando…</div>'; return; }
+  stkOcultarVolver();
+  var hoy = stkEstado.hoy || '', arts = stkArtMap();
+  var artOpts = ((stkEstado.datos && stkEstado.datos.articulos) || []).filter(function(a) { return !stkEsDiabetesCli(a); })
+    .sort(function(x, y) { return String(x.Nombre) < String(y.Nombre) ? -1 : 1; });
+  var ubics = (stkEstado.datos && stkEstado.datos.ubicaciones) || [];
+  var h = '<div class="stk-filtros"><button class="btn bp bsm" onclick="stkAbrirEntrega()">+ Nueva entrega</button>' +
+    '<span class="stk-dim">Se consulta solo el período y los filtros elegidos. Las entregas de Diabetes (hoja Entregas) se integran en SEC-1a.4.</span></div>';
+  h += '<div class="card"><div class="stk-body"><div class="stk-fil-grid">' +
+    stkFiltroCampo('Desde', '<input type="date" class="stk-sel-in" value="' + stkEsc(F.desde) + '"' + (hoy ? ' max="' + stkEsc(hoy) + '"' : '') + ' onchange="stkHistSet(\'desde\',this.value)">') +
+    stkFiltroCampo('Hasta', '<input type="date" class="stk-sel-in" value="' + stkEsc(F.hasta) + '"' + (hoy ? ' max="' + stkEsc(hoy) + '"' : '') + ' onchange="stkHistSet(\'hasta\',this.value)">') +
+    stkFiltroCampo('Seccional', '<select class="stk-sel-in" onchange="stkHistSet(\'seccional\',this.value)">' + stkOpt('', 'Todas', F.seccional) +
+      ubics.map(function(u) { return stkOpt(stkCampo(u, 'ID'), stkCampo(u, 'Nombre'), F.seccional); }).join('') + '</select>') +
+    stkFiltroCampo('Desde ubicación', '<select class="stk-sel-in" onchange="stkHistSet(\'origen\',this.value)">' + stkOpt('', 'Todas', F.origen) +
+      ubics.map(function(u) { return stkOpt(stkCampo(u, 'ID'), stkCampo(u, 'Nombre'), F.origen); }).join('') + '</select>') +
+    stkFiltroCampo('Tipo de destinatario', '<select class="stk-sel-in" onchange="stkHistSet(\'tipoDestinatario\',this.value)">' + stkOpcionesLista('tiposDestinatario', F.tipoDestinatario, 'Todos') + '</select>') +
+    stkFiltroCampo('Destinatario / consultorio', '<input class="stk-sel-in" value="' + stkEsc(F.destinatario) + '" placeholder="Texto" oninput="stkHistSet(\'destinatario\',this.value)" onkeydown="if(event.key===\'Enter\')stkHistBuscar(1)">') +
+    stkFiltroCampo('Afiliado (DNI o nombre)', '<input class="stk-sel-in" value="' + stkEsc(F.afiliado) + '" oninput="stkHistSet(\'afiliado\',this.value)" onkeydown="if(event.key===\'Enter\')stkHistBuscar(1)">') +
+    stkFiltroCampo('Artículo', '<select class="stk-sel-in" onchange="stkHistSet(\'articulo\',this.value)">' + stkOpt('', 'Todos', F.articulo) +
+      artOpts.map(function(a) { return stkOpt(stkCampo(a, 'ID'), stkCampo(a, 'Nombre'), F.articulo); }).join('') + '</select>') +
+    stkFiltroCampo('Constancia', '<select class="stk-sel-in" onchange="stkHistSet(\'constancia\',this.value)">' + stkOpcionesLista('estadosConstancia', F.constancia, 'Todas') + '</select>') +
+    '</div><div class="stk-acciones">' +
+    '<label class="stk-check"><input type="checkbox"' + (F.anuladas ? ' checked' : '') + ' onchange="stkHistSet(\'anuladas\',this.checked)"> Incluir anuladas</label>' +
+    '<span style="flex:1"></span>' +
+    '<button class="btn bp bsm" onclick="stkHistBuscar(1)"' + (H.cargando ? ' disabled' : '') + '>🔎 Buscar</button>' +
+    '<button class="btn bs bsm" onclick="stkHistLimpiar()">Limpiar</button>' +
+    '<button class="btn bs bsm" onclick="stkInforme(\'entregas\',\'pdf\')"' + (H.res && H.res.total ? '' : ' disabled') + '>🖨 Informe PDF</button>' +
+    '<button class="btn bs bsm" onclick="stkInforme(\'entregas\',\'csv\')"' + (H.res && H.res.total ? '' : ' disabled') + '>⬇ CSV</button>' +
+    '</div></div></div>';
+  if (H.cargando) { c.innerHTML = h + '<div class="stk-vacio">⏳ Consultando…</div>'; return; }
+  if (H.error) { c.innerHTML = h + '<div class="stk-aviso bad">✗ ' + stkEsc(H.error) + '</div>'; return; }
+  var R = H.res, T = R.totales;
+  h += '<div class="stk-dim" style="margin:-4px 0 8px">Resultado del ' + stkFmtFecha(R.filtros.desde) + ' al ' + stkFmtFecha(R.filtros.hasta) + ' · consultado ' + stkEsc(R.generado) + '</div>';
+  h += '<div class="stk-kpis">' +
+    '<div class="stk-kpi"><div class="k">Entregas</div><div class="v">' + T.operaciones.toLocaleString('es-AR') + '</div><div class="s">' + (T.anuladas ? T.anuladas + ' anulada(s) incluida(s)' : 'operaciones') + '</div></div>' +
+    '<div class="stk-kpi"><div class="k">Unidades entregadas</div><div class="v">' + T.unidades.toLocaleString('es-AR') + '</div><div class="s">' + (R.filtros.articulo ? 'del artículo filtrado' : 'todas las unidades de medida') + '</div></div>' +
+    '<div class="stk-kpi"><div class="k">Valor de materiales entregados</div><div class="v" style="font-size:17px">' + stkEsc(stkMoneda(T.valor)) + '</div><div class="s" title="Último precio de compra registrado con fecha igual o anterior a cada entrega. No es un costo contable.">valor de referencia' +
+      (T.lineasSinValor ? ' · ' + T.lineasSinValor + ' línea(s) sin valor' : '') + '</div></div>' +
+    '<div class="stk-kpi"><div class="k">Constancias pendientes</div><div class="v">' + T.constanciasPendientes + '</div><div class="s">' +
+      (T.constanciasPendientes && F.constancia !== 'PENDIENTE' ? '<button class="stk-enlace" onclick="stkHistSoloPendientes()">ver solo pendientes</button>' : 'en el resultado') + '</div></div>' +
+    '</div>';
+  if (!R.total) { c.innerHTML = h + '<div class="card"><div class="stk-vacio">Sin entregas para este período y filtros.</div></div>'; return; }
+  // Totales por artículo
+  h += '<div class="card"><div class="ch">📦 <span class="ct">Totales por artículo</span><span class="stk-dim">' + R.porArticulo.length + '</span></div><div class="cb tw"><table>' +
+    '<thead><tr><th>Artículo</th><th>Unidad</th><th class="stk-num">Cantidad</th><th class="stk-num">Valor de referencia</th></tr></thead><tbody>' +
+    R.porArticulo.slice().sort(function(x, y) { var a = arts[x.articuloId], b = arts[y.articuloId]; return String(a ? a.Nombre : x.articuloId) < String(b ? b.Nombre : y.articuloId) ? -1 : 1; })
+      .map(function(x) {
+        var a = arts[x.articuloId];
+        return '<tr><td>' + stkEsc(a ? a.Nombre : x.articuloId) + '</td><td>' + stkEsc(a ? a.Unidad : '') + '</td><td class="stk-num">' + x.cantidad.toLocaleString('es-AR') +
+          '</td><td class="stk-num">' + (x.valor || !x.lineasSinValor ? stkEsc(stkMoneda(x.valor)) : '<span class="stk-dim">sin valor</span>') +
+          (x.lineasSinValor && x.valor ? ' <span class="stk-dim" title="Líneas sin precio de compra registrado">(+' + x.lineasSinValor + ' sin valor)</span>' : '') + '</td></tr>';
+      }).join('') + '</tbody></table></div></div>';
+  if (R.porSeccional.length > 1) {
+    h += '<div class="card"><div class="ch">📍 <span class="ct">Por seccional</span></div><div class="cb tw"><table>' +
+      '<thead><tr><th>Seccional</th><th class="stk-num">Entregas</th><th class="stk-num">Unidades</th><th class="stk-num">Valor de referencia</th></tr></thead><tbody>' +
+      R.porSeccional.slice().sort(function(x, y) { return y.unidades - x.unidades; }).map(function(x) {
+        return '<tr><td>' + stkEsc(x.seccional ? stkNombreUbic(x.seccional) : '(sin seccional)') + '</td><td class="stk-num">' + x.operaciones + '</td><td class="stk-num">' +
+          x.unidades.toLocaleString('es-AR') + '</td><td class="stk-num">' + stkEsc(stkMoneda(x.valor)) + '</td></tr>';
+      }).join('') + '</tbody></table></div></div>';
+  }
+  // Operaciones
+  h += '<div class="card"><div class="ch">📤 <span class="ct">Entregas</span><span class="stk-dim">' + R.total + ' · página ' + R.pagina + ' de ' + R.paginas + '</span></div><div class="cb tw"><table>' +
+    '<thead><tr><th>Fecha</th><th>Destinatario</th><th>Seccional</th><th>Desde</th><th>Retira</th><th>Artículos</th><th class="stk-num">Valor ref.</th><th>Constancia</th><th></th></tr></thead><tbody>' +
+    R.ops.map(function(o) {
+      var ref = stkRef(o.id), abierta = !!H.abiertas[o.id];
+      var resumen = o.lineas.slice(0, 3).map(function(l) { var a = arts[l.articuloId]; return (a ? a.Nombre : l.articuloId) + ' × ' + stkCant(l.cantidad, a); }).join(' · ') +
+        (o.lineas.length > 3 ? ' · y ' + (o.lineas.length - 3) + ' más' : '');
+      var fila = '<tr class="' + (o.activa ? '' : 'stk-anulada') + '"><td class="mono">' + stkFmtFecha(o.fecha) + '</td><td>' +
+        stkDestinatarioHtml(o.destinatario, o.dni, o.seccional, o.tipoDestinatario) + '<div class="stk-dim" style="font-size:11px">' + stkEsc(stkL('tiposDestinatario', o.tipoDestinatario)) + '</div></td><td>' +
+        stkEsc(o.seccional ? stkNombreUbic(o.seccional) : '—') + '</td><td>' + stkEsc(stkNombreUbic(o.origen)) + '</td><td style="font-size:12px">' +
+        stkEsc(stkL('retira', o.retira)) + (o.retiraDetalle ? '<div class="stk-dim" style="font-size:11px">' + stkEsc(o.retiraDetalle) + '</div>' : '') + '</td><td style="font-size:12px">' +
+        '<strong>' + o.lineas.length + ' artículo(s)</strong><div class="stk-dim">' + stkEsc(resumen) + '</div></td><td class="stk-num">' +
+        (o.lineas.length === o.lineasSinValor ? '<span class="stk-dim">sin valor</span>' : stkEsc(stkMoneda(o.valorRef)) + (o.lineasSinValor ? '<div class="stk-dim" style="font-size:10.5px">+' + o.lineasSinValor + ' sin valor</div>' : '')) +
+        '</td><td>' + (o.activa ? stkConstanciaHtml(o.constancia) : '<span class="b bgr">Anulada</span>') + '</td><td><div class="stk-acciones">' +
+        '<button class="btn bs bsm" onclick="stkHistToggle(stkRefs[' + ref + '])">' + (abierta ? 'Ocultar' : 'Ver') + '</button>' +
+        (o.activa ? '<button class="btn bs bsm" title="Actualizar el estado de la constancia" onclick="stkAbrirConstancia(stkRefs[' + ref + '])">✎ Constancia</button>' : '') +
+        '<button class="btn bs bsm" title="Constancia de entrega para imprimir (A4)" onclick="stkImprimirConstancia(stkRefs[' + ref + '])">🖨</button>' +
+        '</div></td></tr>';
+      if (abierta) {
+        fila += '<tr class="stk-op-det stk-det3b"><td colspan="9"><table><thead><tr><th>Artículo</th><th class="stk-num">Cantidad</th><th>Unidad</th><th class="stk-num">Precio ref.</th><th class="stk-num">Valor ref.</th></tr></thead><tbody>' +
+          o.lineas.map(function(l) {
+            var a = arts[l.articuloId];
+            return '<tr><td>' + stkEsc(a ? a.Nombre : l.articuloId) + stkExtraHtml(l.datosExtra) + '<div class="mono stk-dim">' + stkEsc(l.articuloId) + '</div></td><td class="stk-num">' + l.cantidad.toLocaleString('es-AR') +
+              '</td><td>' + stkEsc(a ? a.Unidad : '') + '</td><td class="stk-num">' + (l.precioRef === null ? '<span class="stk-dim">sin precio</span>' :
+                stkEsc(stkMoneda(l.precioRef)) + '<div class="stk-dim" style="font-size:10.5px">' + (l.origenPrecioRef === 'STOCK_INICIAL' ? 'stock inicial' : 'compra') + ' del ' + stkFmtFecha(l.fechaPrecioRef) + '</div>') +
+              '</td><td class="stk-num">' + (l.valorRef === null ? '—' : stkEsc(stkMoneda(l.valorRef))) + '</td></tr>';
+          }).join('') + '</tbody></table>' +
+          '<div class="stk-dim" style="margin-top:6px">Operación ' + stkEsc(o.id) + ' · registrada ' + stkEsc(o.creadoEn) +
+          (o.observacion ? ' · Observación: ' + stkEsc(o.observacion) : '') +
+          (o.constancia && o.constancia.observacion ? ' · Constancia: ' + stkEsc(o.constancia.observacion) : '') + '</div></td></tr>';
+      }
+      return fila;
+    }).join('') + '</tbody></table>' + stkPaginadorHtml(R, 'stkHistBuscar') + '</div></div>';
+  h += '<div class="stk-dim" style="margin:4px 0 12px">Valor de referencia: último precio de compra (o del stock inicial) registrado con fecha igual o anterior a cada entrega. ' +
+    'Es una referencia, no un costo contable, y no se suma al gasto por compras.</div>';
+  c.innerHTML = h;
+}
+
+function stkPaginadorHtml(R, fn) {
+  if (R.paginas <= 1) return '';
+  return '<div class="stk-pag">' +
+    '<button class="btn bs bsm"' + (R.pagina <= 1 ? ' disabled' : '') + ' onclick="' + fn + '(' + (R.pagina - 1) + ')">« Anterior</button>' +
+    '<span class="stk-dim">Página ' + R.pagina + ' de ' + R.paginas + '</span>' +
+    '<button class="btn bs bsm"' + (R.pagina >= R.paginas ? ' disabled' : '') + ' onclick="' + fn + '(' + (R.pagina + 1) + ')">Siguiente »</button></div>';
+}
+
+// ── Actualizar constancia (no toca el movimiento ni el stock) ──────────
+function stkOpHist(opId) {
+  var H = stkEstado.hist;
+  return (H && H.res && H.res.ops || []).filter(function(o) { return o.id === opId; })[0] || null;
+}
+
+function stkAbrirConstancia(opId) {
+  var o = stkOpHist(opId);
+  if (!o) return;
+  var hoy = stkEstado.hoy || '', c = o.constancia || { estado: 'PENDIENTE', fechaRecepcion: '', observacion: '' };
+  stkForm = { clase: 'constancia', reqId: stkNuevoReqId(), operacionId: opId, fechaEntrega: o.fecha };
+  var cuerpo = '<div class="stk-aviso">Entrega del ' + stkFmtFecha(o.fecha) + ' a <strong>' + stkEsc(o.destinatario) + '</strong>' + (o.dni ? ' (DNI ' + stkEsc(o.dni) + ')' : '') +
+    ' · ' + o.lineas.length + ' artículo(s)</div>' +
+    '<div class="stk-aviso">Cambiar el estado de la constancia <strong>no modifica la entrega ni el stock</strong>. El cambio queda auditado.</div>' +
+    '<div class="stk-grid">' +
+    '<div><div class="stk-k">Estado</div><select class="stk-in" id="stkm-con" onchange="stkConEstado()">' + stkOpcionesLista('estadosConstancia', c.estado) + '</select></div>' +
+    '<div id="stkm-confr-w"><div class="stk-k">Fecha de recepción</div><input type="date" class="stk-in" id="stkm-confr" min="' + stkEsc(o.fecha) + '"' + (hoy ? ' max="' + stkEsc(hoy) + '"' : '') +
+      ' value="' + stkEsc(c.fechaRecepcion || '') + '"></div>' +
+    '<div style="grid-column:1/-1"><div class="stk-k">Observación</div><input class="stk-in" id="stkm-obs" maxlength="500" value="' + stkEsc(c.observacion || '') + '" placeholder="Ej.: llegó por correo desde la seccional"></div>' +
+    '</div><div id="stkm-msg" class="stk-msg"></div>';
+  stkModalAbrir('Constancia de entrega', cuerpo, stkPieGuardar('Guardar'));
+  stkConEstado();
+}
+
+function stkConEstado() {
+  var rec = stkVal('stkm-con') === 'RECIBIDA', w = document.getElementById('stkm-confr-w'), fr = document.getElementById('stkm-confr');
+  if (w) w.style.display = rec ? '' : 'none';
+  if (rec && fr && !fr.value) fr.value = stkEstado.hoy || '';
+}
+
+async function stkGuardarConstancia() {
+  var f = stkForm, estado = stkVal('stkm-con'), fr = estado === 'RECIBIDA' ? stkVal('stkm-confr') : '';
+  if (estado === 'RECIBIDA' && !fr) { stkModalMsg('Indicá la fecha de recepción.'); return; }
+  if (fr && fr < f.fechaEntrega) { stkModalMsg('La fecha de recepción no puede ser anterior a la entrega.'); return; }
+  var r = await stkEnviar('stk_setConstancia', { operacionId: f.operacionId, estado: estado, fechaRecepcion: fr, observacion: stkVal('stkm-obs') });
+  if (!r) return;
+  if (r.ok) {
+    stkModalCerrar();
+    stkAviso('Constancia actualizada', 'ok');
+    var H = stkHist();
+    await stkHistBuscar(H.pagina || 1);   // solo se vuelve a consultar el historial
+    return;
+  }
+  stkModalMsg(r.msg || 'No se pudo guardar.');
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// SOLAPA 🧾 COMPRAS (gasto por compras; filtrado y paginado en el servidor)
+// ══════════════════════════════════════════════════════════════════════
+function stkComp() {
+  if (!stkEstado.comp) {
+    var hoy = stkEstado.hoy || new Date().toISOString().slice(0, 10);
+    stkEstado.comp = { filtros: { desde: hoy.slice(0, 8) + '01', hasta: hoy, proveedor: '', comprobante: '', articulo: '', ubicacion: '', anuladas: false },
+                       res: null, cargando: false, error: '', abiertas: {}, pagina: 1, seq: 0 };
+  }
+  return stkEstado.comp;
+}
+
+function stkCompSet(k, v) { stkComp().filtros[k] = v; }
+
+async function stkCompBuscar(pagina) {
+  var C = stkComp();
+  if (C.filtros.desde && C.filtros.hasta && C.filtros.desde > C.filtros.hasta) { C.error = 'La fecha "desde" es posterior a "hasta".'; renderStkPage(); return; }
+  C.cargando = true; C.error = ''; C.pagina = pagina || 1;
+  var seq = ++C.seq;
+  renderStkPage();
+  var r;
+  try { r = await stkApi('stk_consultarCompras', { filtros: C.filtros, pagina: C.pagina, tam: STK_TAM_PAGINA }); }
+  catch (e) { r = { ok: false, msg: e.message || String(e) }; }
+  if (seq !== C.seq) return;
+  C.cargando = false;
+  if (r.code === 'SESION_INVALIDA') { stkEstado.datos = null; stkEstado.aviso = r.msg; renderStkPage(); return; }
+  if (!r.ok) { C.error = r.msg || 'No se pudo consultar las compras.'; C.res = null; }
+  else { C.res = r; C.abiertas = {}; }
+  renderStkPage();
+}
+
+function stkCompLimpiar() { stkEstado.comp = null; stkComp(); stkCompBuscar(1); }
+function stkCompToggle(id) { var C = stkComp(); C.abiertas[id] = !C.abiertas[id]; renderStkPage(); }
+
+function renderStkCompras(c) {
+  var C = stkComp(), F = C.filtros;
+  if (!C.res && !C.cargando && !C.error) { stkCompBuscar(1); c.innerHTML = '<div class="stk-vacio">⏳ Consultando…</div>'; return; }
+  var hoy = stkEstado.hoy || '', arts = stkArtMap();
+  var artOpts = ((stkEstado.datos && stkEstado.datos.articulos) || []).slice().sort(function(x, y) { return String(x.Nombre) < String(y.Nombre) ? -1 : 1; });
+  var ubics = (stkEstado.datos && stkEstado.datos.ubicaciones) || [];
+  var h = '<div class="stk-filtros"><button class="btn bp bsm" onclick="stkAbrirOperacion(\'INGRESO\')">+ Ingreso / compra</button>' +
+    '<span class="stk-dim"><strong>Gasto por compras</strong>: importes de las facturas registradas en los ingresos del período. No es lo mismo que el valor de los materiales entregados.</span></div>';
+  h += '<div class="card"><div class="stk-body"><div class="stk-fil-grid">' +
+    stkFiltroCampo('Desde', '<input type="date" class="stk-sel-in" value="' + stkEsc(F.desde) + '"' + (hoy ? ' max="' + stkEsc(hoy) + '"' : '') + ' onchange="stkCompSet(\'desde\',this.value)">') +
+    stkFiltroCampo('Hasta', '<input type="date" class="stk-sel-in" value="' + stkEsc(F.hasta) + '"' + (hoy ? ' max="' + stkEsc(hoy) + '"' : '') + ' onchange="stkCompSet(\'hasta\',this.value)">') +
+    stkFiltroCampo('Proveedor', '<input class="stk-sel-in" value="' + stkEsc(F.proveedor) + '" oninput="stkCompSet(\'proveedor\',this.value)" onkeydown="if(event.key===\'Enter\')stkCompBuscar(1)">') +
+    stkFiltroCampo('Factura', '<input class="stk-sel-in" value="' + stkEsc(F.comprobante) + '" oninput="stkCompSet(\'comprobante\',this.value)" onkeydown="if(event.key===\'Enter\')stkCompBuscar(1)">') +
+    stkFiltroCampo('Artículo', '<select class="stk-sel-in" onchange="stkCompSet(\'articulo\',this.value)">' + stkOpt('', 'Todos', F.articulo) +
+      artOpts.map(function(a) { return stkOpt(stkCampo(a, 'ID'), stkCampo(a, 'Nombre'), F.articulo); }).join('') + '</select>') +
+    stkFiltroCampo('Ubicación de ingreso', '<select class="stk-sel-in" onchange="stkCompSet(\'ubicacion\',this.value)">' + stkOpt('', 'Todas', F.ubicacion) +
+      ubics.map(function(u) { return stkOpt(stkCampo(u, 'ID'), stkCampo(u, 'Nombre'), F.ubicacion); }).join('') + '</select>') +
+    '</div><div class="stk-acciones">' +
+    '<label class="stk-check"><input type="checkbox"' + (F.anuladas ? ' checked' : '') + ' onchange="stkCompSet(\'anuladas\',this.checked)"> Incluir anuladas</label>' +
+    '<span style="flex:1"></span>' +
+    '<button class="btn bp bsm" onclick="stkCompBuscar(1)"' + (C.cargando ? ' disabled' : '') + '>🔎 Buscar</button>' +
+    '<button class="btn bs bsm" onclick="stkCompLimpiar()">Limpiar</button>' +
+    '<button class="btn bs bsm" onclick="stkInforme(\'compras\',\'pdf\')"' + (C.res && C.res.total ? '' : ' disabled') + '>🖨 Informe PDF</button>' +
+    '<button class="btn bs bsm" onclick="stkInforme(\'compras\',\'csv\')"' + (C.res && C.res.total ? '' : ' disabled') + '>⬇ CSV</button>' +
+    '</div></div></div>';
+  if (C.cargando) { c.innerHTML = h + '<div class="stk-vacio">⏳ Consultando…</div>'; return; }
+  if (C.error) { c.innerHTML = h + '<div class="stk-aviso bad">✗ ' + stkEsc(C.error) + '</div>'; return; }
+  var R = C.res, T = R.totales;
+  h += '<div class="stk-dim" style="margin:-4px 0 8px">Resultado del ' + stkFmtFecha(R.filtros.desde) + ' al ' + stkFmtFecha(R.filtros.hasta) + ' · consultado ' + stkEsc(R.generado) + '</div>';
+  h += '<div class="stk-kpis">' +
+    '<div class="stk-kpi"><div class="k">Compras</div><div class="v">' + T.operaciones.toLocaleString('es-AR') + '</div><div class="s">ingresos registrados</div></div>' +
+    '<div class="stk-kpi"><div class="k">Gasto por compras</div><div class="v" style="font-size:17px">' + stkEsc(stkMoneda(T.gasto)) + '</div><div class="s">' +
+      (T.lineasSinImporte ? T.lineasSinImporte + ' línea(s) sin importe no suman' : 'según importes registrados') + '</div></div>' +
+    '<div class="stk-kpi"><div class="k">Unidades compradas</div><div class="v">' + T.unidades.toLocaleString('es-AR') + '</div><div class="s">todas las unidades de medida</div></div>' +
+    '</div>';
+  if (!R.total) { c.innerHTML = h + '<div class="card"><div class="stk-vacio">Sin compras para este período y filtros.</div></div>'; return; }
+  if (R.porProveedor.length > 1) {
+    h += '<div class="card"><div class="ch">🏷 <span class="ct">Por proveedor</span></div><div class="cb tw"><table><thead><tr><th>Proveedor</th><th class="stk-num">Compras</th><th class="stk-num">Importe</th></tr></thead><tbody>' +
+      R.porProveedor.slice().sort(function(x, y) { return y.importe - x.importe; }).map(function(x) {
+        return '<tr><td>' + stkEsc(x.proveedor || '(sin proveedor)') + '</td><td class="stk-num">' + x.operaciones + '</td><td class="stk-num">' + stkEsc(stkMoneda(x.importe)) + '</td></tr>';
+      }).join('') + '</tbody></table></div></div>';
+  }
+  h += '<div class="card"><div class="ch">🧾 <span class="ct">Compras</span><span class="stk-dim">' + R.total + ' · página ' + R.pagina + ' de ' + R.paginas + '</span></div><div class="cb tw"><table>' +
+    '<thead><tr><th>Fecha</th><th>Proveedor</th><th>Factura</th><th>Ingresa en</th><th>Artículos</th><th class="stk-num">Total</th><th></th></tr></thead><tbody>' +
+    R.ops.map(function(o) {
+      var ref = stkRef(o.id), abierta = !!C.abiertas[o.id];
+      var fila = '<tr class="' + (o.activa ? '' : 'stk-anulada') + '"><td class="mono">' + stkFmtFecha(o.fecha) + '</td><td>' + stkEsc(o.proveedor || '—') + '</td><td>' + stkEsc(o.comprobante || '—') +
+        '</td><td>' + stkEsc(stkNombreUbic(o.ubicacion)) + '</td><td style="font-size:12px">' + o.lineas.length + ' artículo(s)</td><td class="stk-num">' + stkEsc(stkMoneda(o.total)) +
+        (o.lineasSinImporte ? '<div class="stk-dim" style="font-size:10.5px">+' + o.lineasSinImporte + ' sin importe</div>' : '') + (o.activa ? '' : ' <span class="b bgr">Anulada</span>') +
+        '</td><td><button class="btn bs bsm" onclick="stkCompToggle(stkRefs[' + ref + '])">' + (abierta ? 'Ocultar' : 'Ver') + '</button></td></tr>';
+      if (abierta) {
+        fila += '<tr class="stk-op-det stk-det3b"><td colspan="7"><table><thead><tr><th>Artículo</th><th class="stk-num">Cantidad</th><th>Unidad</th><th class="stk-num">Precio unit.</th><th class="stk-num">Importe</th></tr></thead><tbody>' +
+          o.lineas.map(function(l) {
+            var a = arts[l.articuloId];
+            return '<tr><td>' + stkEsc(a ? a.Nombre : l.articuloId) + '</td><td class="stk-num">' + l.cantidad.toLocaleString('es-AR') + '</td><td>' + stkEsc(a ? a.Unidad : '') +
+              '</td><td class="stk-num">' + (l.precioUnit === null ? '—' : stkEsc(stkMoneda(l.precioUnit))) + '</td><td class="stk-num">' + (l.importe === null ? '—' : stkEsc(stkMoneda(l.importe))) + '</td></tr>';
+          }).join('') + '<tr><td colspan="4" style="text-align:right;font-weight:700">Total de la compra</td><td class="stk-num" style="font-weight:700">' + stkEsc(stkMoneda(o.total)) + '</td></tr></tbody></table>' +
+          '<div class="stk-dim" style="margin-top:6px">Operación ' + stkEsc(o.id) + ' · registrada ' + stkEsc(o.creadoEn) + (o.observacion ? ' · ' + stkEsc(o.observacion) : '') + '</div></td></tr>';
+      }
+      return fila;
+    }).join('') + '</tbody></table>' + stkPaginadorHtml(R, 'stkCompBuscar') + '</div></div>';
+  c.innerHTML = h;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// INFORMES: PDF (vista A4 del navegador) y CSV (Excel 2016, Argentina)
+// ══════════════════════════════════════════════════════════════════════
+// Trae TODAS las operaciones que coinciden con los filtros, en bloques, y verifica que no falte ninguna.
+async function stkTraerTodo(tipo, filtros, alProgresar) {
+  var accion = tipo === 'entregas' ? 'stk_consultarEntregas' : 'stk_consultarCompras';
+  var ops = [], pagina = 1, primera = null, ids = {};
+  while (true) {
+    var r = await stkApi(accion, { filtros: filtros, pagina: pagina, tam: 500, exportar: true });
+    if (!r || !r.ok) throw new Error((r && r.msg) || 'No se pudo leer el informe.');
+    if (!primera) {
+      primera = r;
+      if (r.total > STK_INFORME_AVISO_OPS && typeof window !== 'undefined' && window.confirm &&
+          !window.confirm('El informe tiene ' + r.total.toLocaleString('es-AR') + ' operaciones y puede tardar. ¿Continuar? (Podés acotar el período con los filtros.)'))
+        return null;
+    } else if (r.total !== primera.total) {
+      throw new Error('Los datos cambiaron mientras se generaba el informe. Volvé a generarlo.');
+    }
+    r.ops.forEach(function(o) {
+      if (ids[o.id]) throw new Error('Operación repetida en el informe (' + o.id + '). Volvé a generarlo.');
+      ids[o.id] = true; ops.push(o);
+    });
+    if (alProgresar) alProgresar(ops.length, primera.total);
+    if (ops.length >= primera.total || pagina >= r.paginas || !r.ops.length) break;
+    pagina++;
+  }
+  if (ops.length !== primera.total) throw new Error('El informe quedó incompleto (' + ops.length + ' de ' + primera.total + '). Volvé a generarlo.');
+  return { cab: primera, ops: ops };
+}
+
+async function stkInforme(tipo, formato) {
+  var est = tipo === 'entregas' ? stkHist() : stkComp();
+  if (!est.res) return;
+  var filtros = JSON.parse(JSON.stringify(est.res.filtros));   // exactamente lo consultado en pantalla
+  var win = null;
+  if (formato === 'pdf') {
+    win = window.open('', '_blank');
+    if (!win) { stkAviso('El navegador bloqueó la ventana del informe. Permití ventanas emergentes para este sitio.', 'err'); return; }
+    win.document.open();
+    win.document.write('<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Informe OSPIV</title></head><body style="font-family:Arial,sans-serif;padding:24px">' +
+      '<p id="prog">Preparando el informe…</p></body></html>');
+    win.document.close();
+  }
+  try {
+    var todo = await stkTraerTodo(tipo, filtros, function(n, t) {
+      if (win && !win.closed) { var p = win.document.getElementById('prog'); if (p) p.textContent = 'Leyendo operaciones: ' + n + ' de ' + t + '…'; }
+    });
+    if (!todo) { if (win) win.close(); return; }
+    if (formato === 'csv') stkDescargarCSV3b(tipo, todo);
+    else await stkEscribirInforme(win, tipo, todo);
+  } catch (e) {
+    if (win && !win.closed) { var p = win.document.getElementById('prog'); if (p) { p.style.color = '#c0392b'; p.textContent = '✗ ' + (e.message || e); } }
+    stkAviso(e.message || String(e), 'err');
+  }
+}
+
+function stkNumCSV(n) { return n === null || n === undefined || n === '' ? '' : String(n).replace('.', ','); }
+
+function stkDescargarArchivo(nombre, contenido, mime) {
+  var blob = new Blob([contenido], { type: mime });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function() { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+function stkDescargarCSV3b(tipo, todo) {
+  var arts = stkArtMap(), lineas = [], F = todo.cab.filtros;
+  function art(id) { return arts[id] || {}; }
+  if (tipo === 'entregas') {
+    lineas.push(['Operación', 'Fecha', 'Desde', 'Tipo de destinatario', 'Seccional', 'Destinatario', 'DNI', 'Retira / envío', 'Detalle retiro',
+      'Constancia', 'Fecha recepción', 'Artículo ID', 'Artículo', 'Cantidad', 'Unidad', 'Datos adicionales', 'Precio ref.', 'Fecha precio ref.', 'Valor ref.', 'Observación', 'Estado'].map(stkCeldaCSV).join(';'));
+    todo.ops.forEach(function(o) {
+      o.lineas.forEach(function(l) {
+        lineas.push([o.id, stkFmtFecha(o.fecha), stkNombreUbic(o.origen), stkL('tiposDestinatario', o.tipoDestinatario), o.seccional ? stkNombreUbic(o.seccional) : '',
+          o.destinatario, o.dni, stkL('retira', o.retira), o.retiraDetalle, o.constancia ? stkL('estadosConstancia', o.constancia.estado) : '',
+          o.constancia && o.constancia.fechaRecepcion ? stkFmtFecha(o.constancia.fechaRecepcion) : '', l.articuloId, art(l.articuloId).Nombre || '', l.cantidad,
+          art(l.articuloId).Unidad || '', stkExtraTexto(l.datosExtra), stkNumCSV(l.precioRef), l.fechaPrecioRef ? stkFmtFecha(l.fechaPrecioRef) : '', stkNumCSV(l.valorRef),
+          o.observacion, (o.activa && l.estado !== 'ANULADO') ? 'Activa' : 'Anulada'].map(stkCeldaCSV).join(';'));
+      });
+    });
+  } else {
+    lineas.push(['Operación', 'Fecha', 'Proveedor', 'Factura', 'Ingresa en', 'Artículo ID', 'Artículo', 'Cantidad', 'Unidad', 'Precio unit.', 'Importe', 'Total de la compra', 'Observación', 'Estado'].map(stkCeldaCSV).join(';'));
+    todo.ops.forEach(function(o) {
+      o.lineas.forEach(function(l) {
+        lineas.push([o.id, stkFmtFecha(o.fecha), o.proveedor, o.comprobante, stkNombreUbic(o.ubicacion), l.articuloId, art(l.articuloId).Nombre || '', l.cantidad,
+          art(l.articuloId).Unidad || '', stkNumCSV(l.precioUnit), stkNumCSV(l.importe), stkNumCSV(o.total), o.observacion,
+          (o.activa && l.estado !== 'ANULADO') ? 'Activa' : 'Anulada'].map(stkCeldaCSV).join(';'));
+      });
+    });
+  }
+  var nombre = (tipo === 'entregas' ? 'entregas' : 'compras') + '_' + (F.desde || 'inicio') + '_a_' + (F.hasta || 'hoy') + '.csv';
+  stkDescargarArchivo(nombre, '﻿' + lineas.join('\r\n'), 'text/csv;charset=utf-8');
+  stkAviso('CSV descargado · ' + todo.ops.length + ' operación(es)', 'ok');
+}
+
+// ── Vista A4 institucional ─────────────────────────────────────────────
+function stkLogoSrc() {
+  try { var im = document.querySelector('img[alt="OSPIV"]'); return im ? im.src : ''; } catch (e) { return ''; }
+}
+
+var STK_CSS_A4 = [
+  '@page{size:A4;margin:14mm 12mm 16mm}',
+  '*{box-sizing:border-box}',
+  'body{font-family:Arial,Helvetica,sans-serif;color:#1b1f2a;font-size:10.5pt;margin:0;background:#fff}',
+  '.barra{position:sticky;top:0;background:#f3f5fa;border-bottom:1px solid #ccd3e3;padding:10px 16px;display:flex;gap:12px;align-items:center;font-size:10pt}',
+  '.barra button{background:#1d3a8a;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-size:10pt;cursor:pointer}',
+  '.hoja{max-width:186mm;margin:0 auto;padding:10px 0 24px}',
+  '.enc{display:flex;align-items:center;gap:14px;border-bottom:3px solid #1d3a8a;padding-bottom:8px;margin-bottom:10px}',
+  '.enc img{height:46px}',
+  '.enc h1{font-size:14pt;margin:0;color:#1d3a8a}',
+  '.enc .sub{font-size:9pt;color:#555}',
+  '.meta{font-size:9pt;color:#333;margin:6px 0 10px;line-height:1.5}',
+  '.kpis{display:flex;gap:8px;margin:8px 0 12px}',
+  '.kpis div{flex:1;border:1px solid #ccd3e3;border-radius:6px;padding:6px 8px;font-size:8.5pt;color:#555}',
+  '.kpis b{display:block;font-size:12pt;color:#1b1f2a}',
+  'h2{font-size:11pt;color:#1d3a8a;margin:14px 0 6px;border-bottom:1px solid #ccd3e3;padding-bottom:3px}',
+  'table{width:100%;border-collapse:collapse;font-size:9pt}',
+  'thead{display:table-header-group}',
+  'th{background:#e8ecf6;text-align:left;padding:4px 6px;border:1px solid #ccd3e3;font-size:8.5pt}',
+  'td{padding:3px 6px;border:1px solid #dde2ee;vertical-align:top}',
+  'tr{page-break-inside:avoid;break-inside:avoid}',
+  '.num{text-align:right;white-space:nowrap}',
+  '.op{border:1px solid #ccd3e3;border-radius:6px;padding:6px 8px;margin:0 0 8px;page-break-inside:avoid;break-inside:avoid}',
+  '.op.grande{page-break-inside:auto;break-inside:auto}',
+  '.op .cab{font-size:9pt;margin-bottom:4px;line-height:1.45}',
+  '.op .cab b{font-size:9.5pt}',
+  '.dim{color:#666;font-size:8.5pt}',
+  '.anulada{color:#c0392b;font-weight:bold}',
+  '.pie{margin-top:14px;font-size:8pt;color:#666;border-top:1px solid #ccd3e3;padding-top:6px}',
+  '.ok{color:#1e7e34;font-weight:bold}',
+  '@media print{.barra{display:none}.hoja{max-width:none;padding:0}}'
+].join('\n');
+
+function stkEscH(v) { return stkEsc(v); }
+
+function stkFiltrosTexto(tipo, F) {
+  var arts = stkArtMap(), t = [];
+  t.push('Período: ' + (F.desde ? stkFmtFecha(F.desde) : 'desde el inicio') + ' al ' + (F.hasta ? stkFmtFecha(F.hasta) : 'hoy'));
+  if (tipo === 'entregas') {
+    if (F.seccional) t.push('Seccional: ' + stkNombreUbic(F.seccional));
+    if (F.origen) t.push('Desde: ' + stkNombreUbic(F.origen));
+    if (F.tipoDestinatario) t.push('Tipo de destinatario: ' + stkL('tiposDestinatario', F.tipoDestinatario));
+    if (F.destinatario) t.push('Destinatario contiene: "' + F.destinatario + '"');
+    if (F.afiliado) t.push('Afiliado: "' + F.afiliado + '"');
+    if (F.constancia) t.push('Constancia: ' + stkL('estadosConstancia', F.constancia));
+  } else {
+    if (F.proveedor) t.push('Proveedor contiene: "' + F.proveedor + '"');
+    if (F.comprobante) t.push('Factura contiene: "' + F.comprobante + '"');
+    if (F.ubicacion) t.push('Ubicación: ' + stkNombreUbic(F.ubicacion));
+  }
+  if (F.articulo) t.push('Artículo: ' + (arts[F.articulo] ? arts[F.articulo].Nombre : F.articulo));
+  t.push(F.anuladas ? 'Incluye operaciones anuladas (no suman en los totales)' : 'Sin operaciones anuladas');
+  return t;
+}
+
+function stkEncabezadoA4(titulo, sub) {
+  var logo = stkLogoSrc();
+  return '<div class="enc">' + (logo ? '<img src="' + logo + '" alt="OSPIV">' : '<b style="font-size:18pt;color:#1d3a8a">OSPIV</b>') +
+    '<div><h1>' + stkEscH(titulo) + '</h1><div class="sub">' + stkEscH(sub) + '</div></div></div>';
+}
+
+function stkHtmlOpEntrega(o, arts) {
+  var grande = o.lineas.length > 25;
+  return '<div class="op' + (grande ? ' grande' : '') + '"><div class="cab"><b>' + stkFmtFecha(o.fecha) + ' · ' + stkEscH(o.destinatario || '—') + '</b>' +
+    (o.dni ? ' · DNI ' + stkEscH(o.dni) : '') + ' · ' + stkEscH(stkL('tiposDestinatario', o.tipoDestinatario)) +
+    (o.activa ? '' : ' · <span class="anulada">ANULADA</span>') + '<br>' +
+    'Seccional: ' + stkEscH(o.seccional ? stkNombreUbic(o.seccional) : '—') + ' · Desde: ' + stkEscH(stkNombreUbic(o.origen)) +
+    ' · Retira: ' + stkEscH(stkL('retira', o.retira) + (o.retiraDetalle ? ' (' + o.retiraDetalle + ')' : '')) +
+    ' · Constancia: ' + stkEscH(o.constancia ? stkL('estadosConstancia', o.constancia.estado) + (o.constancia.fechaRecepcion ? ' ' + stkFmtFecha(o.constancia.fechaRecepcion) : '') : '—') +
+    ' <span class="dim">· ' + stkEscH(o.id) + '</span></div>' +
+    '<table><thead><tr><th>Artículo</th><th class="num">Cantidad</th><th>Unidad</th><th class="num">Valor ref.</th></tr></thead><tbody>' +
+    o.lineas.map(function(l) {
+      var a = arts[l.articuloId] || {}, ex = stkExtraTexto(l.datosExtra);
+      return '<tr><td>' + stkEscH(a.Nombre || l.articuloId) + (ex ? '<div class="dim">' + stkEscH(ex) + '</div>' : '') + '</td><td class="num">' + l.cantidad.toLocaleString('es-AR') +
+        '</td><td>' + stkEscH(a.Unidad || '') + '</td><td class="num">' + (l.valorRef === null ? '<span class="dim">sin valor</span>' : stkEscH(stkMoneda(l.valorRef))) + '</td></tr>';
+    }).join('') + '</tbody></table>' + (o.observacion ? '<div class="dim" style="margin-top:3px">Observación: ' + stkEscH(o.observacion) + '</div>' : '') + '</div>';
+}
+
+function stkHtmlOpCompra(o, arts) {
+  return '<div class="op' + (o.lineas.length > 25 ? ' grande' : '') + '"><div class="cab"><b>' + stkFmtFecha(o.fecha) + ' · ' + stkEscH(o.proveedor || '(sin proveedor)') + '</b>' +
+    ' · Factura: ' + stkEscH(o.comprobante || '—') + ' · Ingresa en: ' + stkEscH(stkNombreUbic(o.ubicacion)) + (o.activa ? '' : ' · <span class="anulada">ANULADA</span>') +
+    ' <span class="dim">· ' + stkEscH(o.id) + '</span></div>' +
+    '<table><thead><tr><th>Artículo</th><th class="num">Cantidad</th><th>Unidad</th><th class="num">Precio unit.</th><th class="num">Importe</th></tr></thead><tbody>' +
+    o.lineas.map(function(l) {
+      var a = arts[l.articuloId] || {};
+      return '<tr><td>' + stkEscH(a.Nombre || l.articuloId) + '</td><td class="num">' + l.cantidad.toLocaleString('es-AR') + '</td><td>' + stkEscH(a.Unidad || '') +
+        '</td><td class="num">' + (l.precioUnit === null ? '—' : stkEscH(stkMoneda(l.precioUnit))) + '</td><td class="num">' + (l.importe === null ? '—' : stkEscH(stkMoneda(l.importe))) + '</td></tr>';
+    }).join('') + '<tr><td colspan="4" class="num"><b>Total de la compra</b>' + (o.lineasSinImporte ? ' <span class="dim">(' + o.lineasSinImporte + ' línea/s sin importe)</span>' : '') +
+    '</td><td class="num"><b>' + stkEscH(stkMoneda(o.total)) + '</b></td></tr></tbody></table></div>';
+}
+
+// Escribe el informe en bloques para no congelar la pantalla y verifica el total al final
+async function stkEscribirInforme(win, tipo, todo) {
+  if (!win || win.closed) return;
+  var arts = stkArtMap(), R = todo.cab, T = R.totales, F = R.filtros;
+  var ahora = new Date(), fh = String(ahora.getDate()).padStart(2, '0') + '/' + String(ahora.getMonth() + 1).padStart(2, '0') + '/' + ahora.getFullYear() + ' ' +
+    String(ahora.getHours()).padStart(2, '0') + ':' + String(ahora.getMinutes()).padStart(2, '0');
+  var titulo = tipo === 'entregas' ? 'Informe de entregas de materiales' : 'Informe de compras (gasto por compras)';
+  var h = '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>' + stkEscH(titulo) + '</title><style>' + STK_CSS_A4 + '</style></head><body>' +
+    '<div class="barra"><button onclick="window.print()">🖨 Imprimir o guardar como PDF</button><span id="estado">Armando el informe…</span></div><div class="hoja">' +
+    stkEncabezadoA4(titulo, 'Obra Social del Personal de la Industria del Vidrio · MediGestión · Stock y Movimientos') +
+    '<div class="meta">' + stkFiltrosTexto(tipo, F).map(stkEscH).join('<br>') + '<br>Generado: ' + fh + '</div>';
+  if (tipo === 'entregas') {
+    h += '<div class="kpis"><div>Entregas<b>' + T.operaciones.toLocaleString('es-AR') + '</b></div><div>Unidades entregadas<b>' + T.unidades.toLocaleString('es-AR') + '</b></div>' +
+      '<div>Valor de materiales entregados (referencia)<b>' + stkEscH(stkMoneda(T.valor)) + '</b>' + (T.lineasSinValor ? T.lineasSinValor + ' línea(s) sin valor' : '') + '</div>' +
+      '<div>Constancias pendientes<b>' + T.constanciasPendientes + '</b></div></div>' +
+      '<h2>Totales por artículo</h2><table><thead><tr><th>Artículo</th><th>Unidad</th><th class="num">Cantidad</th><th class="num">Valor de referencia</th></tr></thead><tbody>' +
+      R.porArticulo.slice().sort(function(x, y) { return String((arts[x.articuloId] || {}).Nombre || x.articuloId) < String((arts[y.articuloId] || {}).Nombre || y.articuloId) ? -1 : 1; })
+        .map(function(x) { var a = arts[x.articuloId] || {}; return '<tr><td>' + stkEscH(a.Nombre || x.articuloId) + '</td><td>' + stkEscH(a.Unidad || '') + '</td><td class="num">' + x.cantidad.toLocaleString('es-AR') +
+          '</td><td class="num">' + (!x.valor && x.lineasSinValor ? '<span class="dim">sin valor</span>' : stkEscH(stkMoneda(x.valor)) + (x.lineasSinValor ? ' <span class="dim">(+' + x.lineasSinValor + ' sin valor)</span>' : '')) + '</td></tr>'; }).join('') + '</tbody></table>';
+    if (R.porSeccional.length > 1) {
+      h += '<h2>Por seccional</h2><table><thead><tr><th>Seccional</th><th class="num">Entregas</th><th class="num">Unidades</th><th class="num">Valor de referencia</th></tr></thead><tbody>' +
+        R.porSeccional.map(function(x) { return '<tr><td>' + stkEscH(x.seccional ? stkNombreUbic(x.seccional) : '(sin seccional)') + '</td><td class="num">' + x.operaciones + '</td><td class="num">' +
+          x.unidades.toLocaleString('es-AR') + '</td><td class="num">' + stkEscH(stkMoneda(x.valor)) + '</td></tr>'; }).join('') + '</tbody></table>';
+    }
+    h += '<h2>Detalle de entregas (' + todo.ops.length + ')</h2>';
+  } else {
+    h += '<div class="kpis"><div>Compras<b>' + T.operaciones.toLocaleString('es-AR') + '</b></div><div>Gasto por compras<b>' + stkEscH(stkMoneda(T.gasto)) + '</b>' +
+      (T.lineasSinImporte ? T.lineasSinImporte + ' línea(s) sin importe' : '') + '</div><div>Unidades compradas<b>' + T.unidades.toLocaleString('es-AR') + '</b></div></div>';
+    if (R.porProveedor.length) {
+      h += '<h2>Por proveedor</h2><table><thead><tr><th>Proveedor</th><th class="num">Compras</th><th class="num">Importe</th></tr></thead><tbody>' +
+        R.porProveedor.map(function(x) { return '<tr><td>' + stkEscH(x.proveedor || '(sin proveedor)') + '</td><td class="num">' + x.operaciones + '</td><td class="num">' + stkEscH(stkMoneda(x.importe)) + '</td></tr>'; }).join('') + '</tbody></table>';
+    }
+    h += '<h2>Totales por artículo</h2><table><thead><tr><th>Artículo</th><th>Unidad</th><th class="num">Cantidad</th><th class="num">Importe</th></tr></thead><tbody>' +
+      R.porArticulo.map(function(x) { var a = arts[x.articuloId] || {}; return '<tr><td>' + stkEscH(a.Nombre || x.articuloId) + '</td><td>' + stkEscH(a.Unidad || '') + '</td><td class="num">' +
+        x.cantidad.toLocaleString('es-AR') + '</td><td class="num">' + stkEscH(stkMoneda(x.importe)) + '</td></tr>'; }).join('') + '</tbody></table>' +
+      '<h2>Detalle de compras (' + todo.ops.length + ')</h2>';
+  }
+  h += '<div id="detalle"></div><div class="pie" id="pie"></div></div></body></html>';
+  win.document.open(); win.document.write(h); win.document.close();
+  var cont = win.document.getElementById('detalle'), BLOQUE = 150, escritas = 0, lineasTot = 0;
+  for (var i = 0; i < todo.ops.length; i += BLOQUE) {
+    if (win.closed) return;
+    var parte = todo.ops.slice(i, i + BLOQUE);
+    cont.insertAdjacentHTML('beforeend', parte.map(function(o) { lineasTot += o.lineas.length; return tipo === 'entregas' ? stkHtmlOpEntrega(o, arts) : stkHtmlOpCompra(o, arts); }).join(''));
+    escritas += parte.length;
+    var e = win.document.getElementById('estado'); if (e) e.textContent = 'Armando el informe: ' + escritas + ' de ' + todo.ops.length + '…';
+    await new Promise(function(res) { setTimeout(res, 0); });
+  }
+  var enPagina = cont.querySelectorAll('.op').length;
+  var okTotal = enPagina === R.total && escritas === R.total;
+  var est = win.document.getElementById('estado');
+  if (est) est.innerHTML = okTotal ? '<span class="ok">✓ Informe completo y verificado: ' + enPagina + ' operación(es), ' + lineasTot + ' línea(s).</span>'
+                                   : '<span class="anulada">✗ El informe no coincide con el total (' + enPagina + ' de ' + R.total + '). Volvé a generarlo.</span>';
+  win.document.getElementById('pie').innerHTML = (tipo === 'entregas'
+    ? 'Valor de referencia: último precio de compra (o del stock inicial) registrado con fecha igual o anterior a cada entrega. Es una referencia, no un costo contable, y no se suma al gasto por compras. '
+    : 'Gasto por compras: importes registrados en los ingresos del período. No incluye el stock inicial. ') +
+    'Operaciones: ' + enPagina + ' de ' + R.total + (okTotal ? ' (verificado)' : '') + '. Generado por MediGestión el ' + fh + '.';
+}
+
+// ── Constancia de entrega imprimible (A4, para firma manuscrita) ───────
+function stkImprimirConstancia(opId) {
+  var o = stkOpHist(opId);
+  if (!o) return;
+  var win = window.open('', '_blank');
+  if (!win) { stkAviso('El navegador bloqueó la ventana. Permití ventanas emergentes para este sitio.', 'err'); return; }
+  var arts = stkArtMap(), afi = stkEsAfiTipo(o.tipoDestinatario);
+  var ahora = new Date(), fh = String(ahora.getDate()).padStart(2, '0') + '/' + String(ahora.getMonth() + 1).padStart(2, '0') + '/' + ahora.getFullYear();
+  var css = STK_CSS_A4 + '\n.c-k{font-size:8.5pt;color:#555;text-transform:uppercase;letter-spacing:.3px}.c-v{font-size:11pt;margin-bottom:6px}' +
+    '.grid2{display:grid;grid-template-columns:1fr 1fr;gap:4px 18px;margin:8px 0}.firmas{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:46px}' +
+    '.firma{border-top:1px solid #333;padding-top:4px;font-size:9pt;text-align:center}.linea{border-bottom:1px solid #999;height:22px;margin:10px 0 2px}' +
+    '.marca{border:3px solid #c0392b;color:#c0392b;font-weight:bold;font-size:18pt;text-align:center;padding:6px;margin:10px 0}';
+  var h = '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Constancia de entrega ' + stkEscH(o.id) + '</title><style>' + css + '</style></head><body>' +
+    '<div class="barra"><button onclick="window.print()">🖨 Imprimir o guardar como PDF</button><span>Imprimir no modifica la entrega ni el stock.</span></div><div class="hoja">' +
+    stkEncabezadoA4('Constancia de entrega de materiales', 'Obra Social del Personal de la Industria del Vidrio') +
+    (o.activa ? '' : '<div class="marca">OPERACIÓN ANULADA — SIN VALIDEZ</div>') +
+    '<div class="grid2">' +
+      '<div><div class="c-k">N.º de operación</div><div class="c-v">' + stkEscH(o.id) + '</div></div>' +
+      '<div><div class="c-k">Fecha de entrega</div><div class="c-v">' + stkFmtFecha(o.fecha) + '</div></div>' +
+      (afi ? '<div><div class="c-k">Afiliado/a</div><div class="c-v"><b>' + stkEscH(o.destinatario) + '</b></div></div><div><div class="c-k">DNI</div><div class="c-v">' + stkEscH(o.dni) + '</div></div>'
+           : '<div style="grid-column:1/-1"><div class="c-k">Destinatario</div><div class="c-v"><b>' + stkEscH(o.destinatario) + '</b> · ' + stkEscH(stkL('tiposDestinatario', o.tipoDestinatario)) + '</div></div>') +
+      '<div><div class="c-k">Seccional</div><div class="c-v">' + stkEscH(o.seccional ? stkNombreUbic(o.seccional) : '—') + '</div></div>' +
+      '<div><div class="c-k">Entregado desde</div><div class="c-v">' + stkEscH(stkNombreUbic(o.origen)) + '</div></div>' +
+      '<div style="grid-column:1/-1"><div class="c-k">Retira / medio de envío</div><div class="c-v">' + stkEscH(stkL('retira', o.retira) + (o.retiraDetalle ? ' — ' + o.retiraDetalle : '')) + '</div></div>' +
+    '</div>' +
+    '<h2>Materiales entregados</h2><table><thead><tr><th style="width:55%">Artículo</th><th class="num">Cantidad</th><th>Unidad</th></tr></thead><tbody>' +
+    o.lineas.filter(function(l) { return o.activa ? l.estado !== 'ANULADO' : true; }).map(function(l) {
+      var a = arts[l.articuloId] || {}, ex = stkExtraTexto(l.datosExtra);
+      return '<tr><td>' + stkEscH(a.Nombre || l.articuloId) + (ex ? '<div class="dim">' + stkEscH(ex) + '</div>' : '') + '</td><td class="num">' + l.cantidad.toLocaleString('es-AR') + '</td><td>' + stkEscH(a.Unidad || '') + '</td></tr>';
+    }).join('') + '</tbody></table>' +
+    (o.observacion ? '<div style="margin-top:8px"><span class="c-k">Observaciones:</span> ' + stkEscH(o.observacion) + '</div>' : '') +
+    '<p style="margin-top:16px;font-size:10.5pt;line-height:1.5">' + (afi
+      ? 'Recibí de OSPIV los materiales detallados precedentemente, en las cantidades indicadas y en conformidad.'
+      : 'Se reciben de OSPIV los materiales detallados precedentemente, en las cantidades indicadas y en conformidad.') + '</p>' +
+    '<div class="grid2" style="margin-top:14px"><div><div class="c-k">Aclaración</div><div class="linea"></div></div><div><div class="c-k">DNI</div><div class="linea"></div></div>' +
+    '<div><div class="c-k">Carácter (afiliado/a, familiar, delegado/a, seccional…)</div><div class="linea"></div></div><div><div class="c-k">Lugar y fecha de recepción</div><div class="linea"></div></div></div>' +
+    '<div class="firmas"><div class="firma">Firma de quien recibe</div><div class="firma">Firma y sello OSPIV</div></div>' +
+    '<div class="pie">Documento generado por MediGestión el ' + fh + ' a partir de la entrega registrada. Imprimirlo no modifica el registro ni el stock.</div>' +
+    '</div></body></html>';
+  win.document.open(); win.document.write(h); win.document.close();
 }
